@@ -230,6 +230,16 @@ public sealed class ActindoProductsController : ControllerBase
             ?? string.Empty;
     }
 
+    private static string GetNameFromJsonNode(JsonObject? node)
+    {
+        if (node is null) return string.Empty;
+        return node["_pim_art_name__actindo_basic__de_DE"]?.ToString()
+            ?? node["_pim_art_name__actindo_basic__en_US"]?.ToString()
+            ?? node["_pim_art_nameactindo_basic_de_DE"]?.ToString()
+            ?? node["_pim_art_nameactindo_basic_en_US"]?.ToString()
+            ?? string.Empty;
+    }
+
     private static (int? actindoId, string? sku, decimal? price, decimal? priceEmployee, decimal? priceMember) ExtractPriceData(JsonElement element)
     {
         int? actindoId = null;
@@ -766,6 +776,25 @@ public sealed class ActindoProductsController : ControllerBase
                     try
                     {
                         var results = await RunFullSyncCoreAsync(rawProduct, capturedInventories, actindoClient, ct);
+
+                        var masterNode = JsonNode.Parse(rawProduct) as JsonObject;
+                        var masterName = GetNameFromJsonNode(masterNode);
+                        var variantNodes = (masterNode?["variants"] as JsonArray)?.OfType<JsonObject>()
+                            .ToDictionary(v => v["sku"]?.ToString() ?? string.Empty, v => v) ?? [];
+
+                        var hasVariants = results.Variants.Count > 0;
+                        await _dashboardMetrics.SaveProductAsync(
+                            jobHandle.Id, masterSku, masterName,
+                            results.MasterProductId, hasVariants ? "master" : "single", null, null, ct);
+
+                        foreach (var variant in results.Variants.Where(v => v.Success))
+                        {
+                            variantNodes.TryGetValue(variant.Sku, out var vNode);
+                            await _dashboardMetrics.SaveProductAsync(
+                                jobHandle.Id, variant.Sku, GetNameFromJsonNode(vNode),
+                                variant.ProductId, "child", masterSku, vNode?["_pim_varcode"]?.ToString(), ct);
+                        }
+
                         success = true;
                         responsePayload = DashboardPayloadSerializer.Serialize(results);
                         await _navCallback.SendCallbackAsync(masterSku, capturedBufferId, results, created: results.MasterOperation == "created", ct);
@@ -811,6 +840,25 @@ public sealed class ActindoProductsController : ControllerBase
             await fullSyncLock.WaitAsync(cancellationToken);
 
             var results = await RunFullSyncCoreAsync(rawProduct, request.Inventories, _actindoClient, cancellationToken);
+
+            var masterNode2 = JsonNode.Parse(rawProduct) as JsonObject;
+            var masterName2 = GetNameFromJsonNode(masterNode2);
+            var variantNodes2 = (masterNode2?["variants"] as JsonArray)?.OfType<JsonObject>()
+                .ToDictionary(v => v["sku"]?.ToString() ?? string.Empty, v => v) ?? [];
+
+            var hasVariants2 = results.Variants.Count > 0;
+            await _dashboardMetrics.SaveProductAsync(
+                jobHandle2.Id, masterSku, masterName2,
+                results.MasterProductId, hasVariants2 ? "master" : "single", null, null, cancellationToken);
+
+            foreach (var variant in results.Variants.Where(v => v.Success))
+            {
+                variantNodes2.TryGetValue(variant.Sku, out var vNode);
+                await _dashboardMetrics.SaveProductAsync(
+                    jobHandle2.Id, variant.Sku, GetNameFromJsonNode(vNode),
+                    variant.ProductId, "child", masterSku, vNode?["_pim_varcode"]?.ToString(), cancellationToken);
+            }
+
             success2 = true;
             responsePayload2 = DashboardPayloadSerializer.Serialize(results);
             return Ok(results);
