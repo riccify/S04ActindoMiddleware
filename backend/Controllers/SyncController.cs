@@ -637,16 +637,9 @@ public sealed class SyncController : ControllerBase
 
                     if (!string.IsNullOrEmpty(variantActindoId) && string.IsNullOrEmpty(navVariant.ActindoId))
                     {
-                        // Extract just the variant code (e.g., "L" from "1042-L")
-                        var variantCode = navVariant.NavId;
-                        if (navVariant.NavId.StartsWith(sku + "-", StringComparison.OrdinalIgnoreCase))
-                        {
-                            variantCode = navVariant.NavId[(sku.Length + 1)..];
-                        }
-
                         variantSyncs.Add(new NavVariantSyncRequest
                         {
-                            NavId = variantCode,
+                            NavId = navVariant.NavId,
                             ActindoId = variantActindoId
                         });
                     }
@@ -794,15 +787,9 @@ public sealed class SyncController : ControllerBase
 
                     if (!string.IsNullOrEmpty(variantActindoId))
                     {
-                        var variantCode = navVariant.NavId;
-                        if (navVariant.NavId.StartsWith(navProduct.Sku + "-", StringComparison.OrdinalIgnoreCase))
-                        {
-                            variantCode = navVariant.NavId[(navProduct.Sku.Length + 1)..];
-                        }
-
                         variantSyncs.Add(new NavVariantSyncRequest
                         {
-                            NavId = variantCode,
+                            NavId = navVariant.NavId,
                             ActindoId = variantActindoId
                         });
                     }
@@ -931,15 +918,7 @@ public sealed class SyncController : ControllerBase
             List<string>? variantNavIds = null;
             if (navProduct.Variants.Count > 0)
             {
-                variantNavIds = navProduct.Variants
-                    .Select(v =>
-                    {
-                        // Extract just the variant code (e.g., "L" from "1042-L")
-                        if (v.NavId.StartsWith(sku + "-", StringComparison.OrdinalIgnoreCase))
-                            return v.NavId[(sku.Length + 1)..];
-                        return v.NavId;
-                    })
-                    .ToList();
+                variantNavIds = navProduct.Variants.Select(v => v.NavId).ToList();
             }
 
             toClear.Add(new NavProductClearRequest
@@ -1042,16 +1021,9 @@ public sealed class SyncController : ControllerBase
 
                     if (!string.IsNullOrEmpty(variantActindoId))
                     {
-                        // Extract just the variant code (e.g., "L" from "1042-L")
-                        var variantCode = navVariant.NavId;
-                        if (navVariant.NavId.StartsWith(sku + "-", StringComparison.OrdinalIgnoreCase))
-                        {
-                            variantCode = navVariant.NavId[(sku.Length + 1)..];
-                        }
-
                         variantSyncs.Add(new NavVariantSyncRequest
                         {
-                            NavId = variantCode,
+                            NavId = navVariant.NavId,
                             ActindoId = variantActindoId
                         });
                     }

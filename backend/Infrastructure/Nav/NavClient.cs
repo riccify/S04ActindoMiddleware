@@ -168,40 +168,26 @@ public sealed class NavClient : INavClient
         IEnumerable<NavProductClearRequest> products,
         CancellationToken cancellationToken = default)
     {
-        var productsList = products.Select(p =>
-        {
-            if (p.VariantNavIds != null && p.VariantNavIds.Count > 0)
-            {
-                return new
-                {
-                    nav_id = p.NavId,
-                    actindo_id = (string?)null,
-                    variants = p.VariantNavIds.Select(v => new
-                    {
-                        nav_id = v,
-                        actindo_id = (string?)null
-                    }).ToArray()
-                };
-            }
-
-            return (object)new
-            {
-                nav_id = p.NavId,
-                actindo_id = (string?)null
-            };
-        }).ToList();
-
-        if (productsList.Count == 0)
+        var productList = products.ToList();
+        if (productList.Count == 0)
             return;
 
-        var payload = new
+        // NAV expects one ids.del request per nav_id
+        var navIds = new List<string>();
+        foreach (var p in productList)
         {
-            requestType = "actindo.product.id.set",
-            products = productsList
-        };
+            navIds.Add(p.NavId);
+            if (p.VariantNavIds != null)
+                navIds.AddRange(p.VariantNavIds);
+        }
 
-        await PostAsync(payload, cancellationToken);
-        _logger.LogInformation("Cleared Actindo IDs for {Count} products in NAV", productsList.Count);
+        foreach (var navId in navIds)
+        {
+            var payload = new { requestType = "actindo.product.ids.del", nav_id = navId };
+            await PostAsync(payload, cancellationToken);
+        }
+
+        _logger.LogInformation("Cleared Actindo IDs for {Count} nav_ids in NAV", navIds.Count);
     }
 
     private async Task<JsonElement> PostAsync(object payload, CancellationToken cancellationToken)
