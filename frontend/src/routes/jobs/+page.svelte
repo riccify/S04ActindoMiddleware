@@ -19,6 +19,7 @@
 	import PageHeader from '$components/layout/PageHeader.svelte';
 	import Card from '$components/ui/Card.svelte';
 	import Button from '$components/ui/Button.svelte';
+	import Modal from '$components/ui/Modal.svelte';
 
 	let activeJobs = $state<ProductJobInfo[]>([]);
 	let loading = $state(true);
@@ -30,6 +31,25 @@
 	let logsLoading = $state(false);
 	let logPollInterval: ReturnType<typeof setInterval> | null = null;
 
+	// Payload modal state
+	let selectedLogEntry = $state<ProductJobLogEntry | null>(null);
+	let payloadModalOpen = $state(false);
+
+	function openPayloadModal(entry: ProductJobLogEntry, e: MouseEvent) {
+		e.stopPropagation();
+		selectedLogEntry = entry;
+		payloadModalOpen = true;
+	}
+
+	function formatJson(raw: string | null): string {
+		if (!raw) return '—';
+		try {
+			return JSON.stringify(JSON.parse(raw), null, 2);
+		} catch {
+			return raw;
+		}
+	}
+
 	let runningCount = $derived(activeJobs.filter((j) => j.status === 'running').length);
 	let queuedCount = $derived(activeJobs.filter((j) => j.status === 'queued').length);
 	let completedCount = $derived(activeJobs.filter((j) => j.status === 'completed').length);
@@ -38,7 +58,6 @@
 	async function load() {
 		try {
 			activeJobs = await productsApi.activeJobs();
-			// If expanded job is gone, close it
 			if (expandedJobId && !activeJobs.find((j) => j.id === expandedJobId)) {
 				closeLogConsole();
 			}
@@ -65,7 +84,6 @@
 			if (job && (job.status === 'running' || job.status === 'queued')) {
 				loadLogs(jobId);
 			} else {
-				// Job done - load once more then stop
 				loadLogs(jobId);
 				stopLogPolling();
 			}
@@ -125,13 +143,11 @@
 	}
 
 	function shortEndpoint(endpoint: string): string {
-		// Extract last path segment or method name from URL
 		try {
 			const url = new URL(endpoint);
 			const parts = url.pathname.split('/').filter(Boolean);
 			return parts[parts.length - 1] ?? endpoint;
 		} catch {
-			// not a URL, maybe just a method name
 			return endpoint.split('.').pop() ?? endpoint;
 		}
 	}
@@ -352,7 +368,7 @@
 												</div>
 											{:else}
 												<span class="text-xs text-gray-500 font-mono ml-auto">
-													{jobLogs.length} {jobLogs.length === 1 ? 'Eintrag' : 'Einträge'}
+													{jobLogs.length} {jobLogs.length === 1 ? 'Eintrag' : 'Einträge'} · Eintrag anklicken für Payload
 												</span>
 											{/if}
 										</div>
@@ -372,7 +388,14 @@
 												{/if}
 											{:else}
 												{#each jobLogs as entry}
-													<div class="flex items-start gap-2 group">
+													<!-- svelte-ignore a11y_click_events_have_key_events a11y_interactive_supports_focus -->
+													<div
+														class="flex items-start gap-2 group cursor-pointer rounded px-1 -mx-1 hover:bg-white/5 transition-colors"
+														onclick={(e) => openPayloadModal(entry, e)}
+														title="Klicken für Request/Response Payload"
+														role="button"
+														tabindex="0"
+													>
 														<!-- Status icon -->
 														<div class="mt-0.5 shrink-0">
 															{#if entry.success}
@@ -396,6 +419,11 @@
 																<span class="text-red-400/80 ml-2 break-all">→ {entry.error}</span>
 															{/if}
 														</div>
+
+														<!-- Click hint -->
+														<span class="text-gray-600 group-hover:text-gray-400 shrink-0 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
+															payload
+														</span>
 													</div>
 												{/each}
 
@@ -416,7 +444,43 @@
 			</table>
 		</div>
 		<p class="text-xs text-gray-600 mt-4">
-			Abgeschlossene Jobs werden nach 5 Minuten automatisch entfernt. Klick auf eine Zeile für den API-Log.
+			Erfolgreiche Jobs werden nach 5 Tagen automatisch entfernt. Fehlgeschlagene nach 5 Minuten. Klick auf eine Zeile für den API-Log.
 		</p>
 	{/if}
 </Card>
+
+<!-- Payload Modal -->
+{#if selectedLogEntry}
+	<Modal
+		bind:open={payloadModalOpen}
+		title={shortEndpoint(selectedLogEntry.endpoint)}
+		class="max-w-4xl"
+		onclose={() => (selectedLogEntry = null)}
+	>
+		<div class="space-y-4">
+			<!-- Full endpoint -->
+			<p class="text-xs text-gray-500 font-mono break-all -mt-2">{selectedLogEntry.endpoint}</p>
+
+			<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+				<!-- Request -->
+				<div>
+					<div class="flex items-center gap-2 mb-2">
+						<span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Request</span>
+					</div>
+					<pre class="text-xs font-mono bg-black/40 border border-white/10 rounded-lg p-3 overflow-auto max-h-96 text-gray-300 whitespace-pre-wrap break-all">{formatJson(selectedLogEntry.requestPayload)}</pre>
+				</div>
+
+				<!-- Response -->
+				<div>
+					<div class="flex items-center gap-2 mb-2">
+						<span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Response</span>
+						{#if !selectedLogEntry.success}
+							<span class="text-xs px-1.5 py-0.5 rounded bg-red-900/40 text-red-400">Fehler</span>
+						{/if}
+					</div>
+					<pre class="text-xs font-mono bg-black/40 border border-white/10 rounded-lg p-3 overflow-auto max-h-96 {selectedLogEntry.success ? 'text-gray-300' : 'text-red-300'} whitespace-pre-wrap break-all">{formatJson(selectedLogEntry.responsePayload)}</pre>
+				</div>
+			</div>
+		</div>
+	</Modal>
+{/if}

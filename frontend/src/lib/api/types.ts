@@ -6,6 +6,8 @@ export interface ProductJobLogEntry {
 	endpoint: string;
 	success: boolean;
 	error: string | null;
+	requestPayload: string | null;
+	responsePayload: string | null;
 }
 
 export interface ProductJobInfo {

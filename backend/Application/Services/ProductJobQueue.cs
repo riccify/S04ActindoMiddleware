@@ -22,6 +22,8 @@ public sealed class ProductJobLogEntry
     public string Endpoint { get; init; } = string.Empty;
     public bool Success { get; init; }
     public string? Error { get; init; }
+    public string? RequestPayload { get; init; }
+    public string? ResponsePayload { get; init; }
 }
 
 public sealed class ProductJobInfo
@@ -67,10 +69,17 @@ public sealed class ProductJobQueue
     }
 
     /// <summary>Hängt einen API-Log-Eintrag an den Job mit der gegebenen ID.</summary>
-    public void AddLog(Guid jobId, string endpoint, bool success, string? error = null)
+    public void AddLog(Guid jobId, string endpoint, bool success, string? error = null, string? requestPayload = null, string? responsePayload = null)
     {
         if (_jobs.TryGetValue(jobId, out var job))
-            job.AddLogEntry(new ProductJobLogEntry { Endpoint = endpoint, Success = success, Error = error });
+            job.AddLogEntry(new ProductJobLogEntry
+            {
+                Endpoint = endpoint,
+                Success = success,
+                Error = error,
+                RequestPayload = requestPayload,
+                ResponsePayload = responsePayload
+            });
     }
 
     /// <summary>Gibt die Log-Einträge eines Jobs zurück, oder null wenn der Job nicht existiert.</summary>
@@ -134,8 +143,11 @@ public sealed class ProductJobQueue
             _semaphore.Release();
             info.CompletedAt = DateTimeOffset.UtcNow;
 
-            // Auto-remove after 5 minutes
-            _ = Task.Delay(TimeSpan.FromMinutes(5))
+            // Successful jobs: keep 5 days; failed jobs: remove after 5 minutes
+            var removeDelay = info.Status == ProductSyncJobStatus.Completed
+                ? TimeSpan.FromDays(5)
+                : TimeSpan.FromMinutes(5);
+            _ = Task.Delay(removeDelay)
                     .ContinueWith(t => _jobs.TryRemove(info.Id, out _));
         }
     }

@@ -68,13 +68,13 @@ public sealed class ActindoClient
 
                 _logger.LogError("Actindo request to {Endpoint} failed with {StatusCode}: {Response}", endpoint, (int)response.StatusCode, responseContent);
                 _availabilityTracker.ReportFailure(ex);
-                AppendJobLog(endpoint, false, $"HTTP {(int)response.StatusCode}: {actindoError}");
+                AppendJobLog(endpoint, false, $"HTTP {(int)response.StatusCode}: {actindoError}", serializedPayload, responseContent);
                 await AppendActindoLogAsync(endpoint, serializedPayload, responseContent, false, cancellationToken);
                 throw ex;
             }
 
             _availabilityTracker.ReportSuccess();
-            AppendJobLog(endpoint, true);
+            AppendJobLog(endpoint, true, requestPayload: serializedPayload, responsePayload: responseContent);
             await AppendActindoLogAsync(endpoint, serializedPayload, responseContent, true, cancellationToken);
 
             using var document = JsonDocument.Parse(responseContent);
@@ -88,7 +88,7 @@ public sealed class ActindoClient
         {
             _availabilityTracker.ReportFailure(ex);
             _logger.LogError(ex, "Actindo request to {Endpoint} failed.", endpoint);
-            AppendJobLog(endpoint, false, ex.Message);
+            AppendJobLog(endpoint, false, ex.Message, requestPayload: serializedPayload);
             await AppendActindoLogAsync(
                 endpoint,
                 serializedPayload,
@@ -99,11 +99,11 @@ public sealed class ActindoClient
         }
     }
 
-    private void AppendJobLog(string endpoint, bool success, string? error = null)
+    private void AppendJobLog(string endpoint, bool success, string? error = null, string? requestPayload = null, string? responsePayload = null)
     {
         var jobId = ProductJobQueue.CurrentJobId;
         if (jobId.HasValue)
-            _productJobQueue.AddLog(jobId.Value, endpoint, success, error);
+            _productJobQueue.AddLog(jobId.Value, endpoint, success, error, requestPayload, responsePayload);
     }
 
     private static string? TryExtractActindoErrorMessage(string responseContent)
