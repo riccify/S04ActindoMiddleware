@@ -127,7 +127,9 @@ CREATE TABLE IF NOT EXISTS Settings (
     {
         return new ActindoSettings
         {
-            Endpoints = BuildDefaultEndpoints()
+            Endpoints = BuildDefaultEndpoints(),
+            NavApiUrl = "https://notify.schalke04.de/nav/test/navapi",
+            NavApiToken = "c6a2fb94938b41efbd393680dffe807812e1f3de182448c58c3e55dd117dd1d89bd46e34a44b46a79d723dd3688adab0d2770818ab0e460bbfa3bbed3e51b471"
         };
     }
 
@@ -142,8 +144,12 @@ CREATE TABLE IF NOT EXISTS Settings (
             ClientId = source.ClientId,
             ClientSecret = source.ClientSecret,
             Endpoints = MergeWithDefaults(source.Endpoints),
-            NavApiUrl = source.NavApiUrl,
-            NavApiToken = source.NavApiToken,
+            NavApiUrl = string.IsNullOrWhiteSpace(source.NavApiUrl)
+                ? "https://notify.schalke04.de/nav/test/navapi"
+                : source.NavApiUrl,
+            NavApiToken = string.IsNullOrWhiteSpace(source.NavApiToken)
+                ? "c6a2fb94938b41efbd393680dffe807812e1f3de182448c58c3e55dd117dd1d89bd46e34a44b46a79d723dd3688adab0d2770818ab0e460bbfa3bbed3e51b471"
+                : source.NavApiToken,
             WarehouseMappings = source.WarehouseMappings ?? new()
         };
     }
