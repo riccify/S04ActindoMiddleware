@@ -15,10 +15,6 @@
 		CircleCheck,
 		CircleX,
 		Play,
-		Box,
-		Boxes,
-		Link2,
-		Warehouse,
 		Trash2
 	} from 'lucide-svelte';
 	import type { ProductJobInfo, ProductJobLogEntry } from '$api/types';
@@ -36,6 +32,7 @@
 	let expandedJobId = $state<string | null>(null);
 	let jobLogs = $state<ProductJobLogEntry[]>([]);
 	let logPollInterval: ReturnType<typeof setInterval> | null = null;
+	let jobsWithErrors = $state<Set<string>>(new Set());
 
 	// Payload modal state
 	let selectedLogEntry = $state<ProductJobLogEntry | null>(null);
@@ -163,6 +160,9 @@
 	async function loadLogs(jobId: string) {
 		try {
 			jobLogs = await productsApi.jobLogs(jobId);
+			if (jobLogs.some((e) => !e.success)) {
+				jobsWithErrors = new Set([...jobsWithErrors, jobId]);
+			}
 		} catch {
 			// ignore
 		}
@@ -342,7 +342,7 @@
 						<!-- Job row -->
 						<tr
 							class="cursor-pointer transition-colors hover:bg-white/5
-								{job.status === 'running' ? 'bg-royal-600/5' : job.status === 'failed' ? 'bg-red-900/5' : ''}
+								{job.status === 'running' ? 'bg-royal-600/5' : (job.status === 'failed' || jobsWithErrors.has(job.id)) ? 'bg-red-900/5' : ''}
 								{expandedJobId === job.id ? 'bg-white/5' : ''}"
 							onclick={() => toggleJob(job)}
 							title="Klicken für API-Log"
@@ -478,7 +478,7 @@
 															<!-- svelte-ignore a11y_click_events_have_key_events a11y_interactive_supports_focus -->
 															<div
 																class="grid gap-x-3 items-center group cursor-pointer rounded-md px-2 py-1.5 -mx-2 hover:bg-white/5 transition-colors"
-																style="grid-template-columns: 14px 52px 88px 160px 1fr auto"
+																style="grid-template-columns: 14px 52px 88px 220px 1fr auto"
 																onclick={(e) => openPayloadModal(entry, e)}
 																title="Klicken für Request/Response Payload"
 																role="button"
@@ -501,20 +501,20 @@
 																<!-- Type badge -->
 																<div>
 																	{#if meta.type === 'master'}
-																		<span class="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-royal-600/30 text-royal-300 border border-royal-500/20 whitespace-nowrap">
-																			<Box size={9} />Master
+																		<span class="inline-flex text-[10px] font-semibold px-1.5 py-0.5 rounded bg-royal-600/30 text-royal-300 border border-royal-500/20 whitespace-nowrap">
+																			Master
 																		</span>
 																	{:else if meta.type === 'variant'}
-																		<span class="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-900/40 text-purple-300 border border-purple-500/20 whitespace-nowrap">
-																			<Boxes size={9} />Variante
+																		<span class="inline-flex text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-900/40 text-purple-300 border border-purple-500/20 whitespace-nowrap">
+																			Variante
 																		</span>
 																	{:else if meta.type === 'relation'}
-																		<span class="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-900/30 text-amber-300 border border-amber-500/20 whitespace-nowrap">
-																			<Link2 size={9} />Verknüpfung
+																		<span class="inline-flex text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-900/30 text-amber-300 border border-amber-500/20 whitespace-nowrap">
+																			Verknüpfung
 																		</span>
 																	{:else if meta.type === 'inventory'}
-																		<span class="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-green-900/30 text-green-400 border border-green-500/20 whitespace-nowrap">
-																			<Warehouse size={9} />Bestand
+																		<span class="inline-flex text-[10px] font-semibold px-1.5 py-0.5 rounded bg-yellow-900/40 text-yellow-300 border border-yellow-500/20 whitespace-nowrap">
+																			Bestand
 																		</span>
 																	{/if}
 																</div>

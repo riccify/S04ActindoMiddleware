@@ -485,7 +485,7 @@ public sealed class ActindoProductsController : ControllerBase
                             endpoints.CreateInventory,
                             success: false,
                             error: mappingError,
-                            requestPayload: JsonSerializer.Serialize(new { sku, warehouseId = stockEntry.WarehouseId, stock = stockEntry.Stock }),
+                            requestPayload: JsonSerializer.Serialize(new { inventory = new { sku, _fulfillment_inventory_warehouse = stockEntry.WarehouseId, _fulfillment_inventory_amount = stockEntry.Stock } }),
                             responsePayload: null);
                         continue;
                     }
@@ -960,7 +960,7 @@ public sealed class ActindoProductsController : ControllerBase
                                 endpoints.CreateInventory,
                                 success: false,
                                 error: mappingError,
-                                requestPayload: JsonSerializer.Serialize(new { sku, warehouseId = stockEntry.WarehouseId, stock = stockEntry.Stock }),
+                                requestPayload: JsonSerializer.Serialize(new { inventory = new { sku, _fulfillment_inventory_warehouse = stockEntry.WarehouseId, _fulfillment_inventory_amount = stockEntry.Stock } }),
                                 responsePayload: null);
                         continue;
                     }
