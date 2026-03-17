@@ -127,7 +127,6 @@ builder.Services.AddScoped<CustomerCreateService>();
 builder.Services.AddScoped<CustomerSaveService>();
 builder.Services.AddScoped<TransactionService>();
 builder.Services.AddScoped<ProductImageService>();
-builder.Services.AddScoped<IJobReplayService, JobReplayService>();
 builder.Services.AddHttpContextAccessor();
 
 var app = builder.Build();

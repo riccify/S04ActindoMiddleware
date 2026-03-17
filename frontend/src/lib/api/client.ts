@@ -4,8 +4,6 @@ import type {
 	RegisterRequest,
 	BootstrapRequest,
 	DashboardSummary,
-	JobsResponse,
-	Job,
 	ProductListItem,
 	ProductStockItem,
 	ProductJobInfo,
@@ -114,37 +112,7 @@ export const auth = {
 
 // Dashboard API
 export const dashboard = {
-	summary: () => request<DashboardSummary>('/api/dashboard/summary'),
-
-	jobs: (params: {
-		limit?: number;
-		page?: number;
-		search?: string;
-		onlyFailed?: boolean;
-		type?: string;
-	} = {}) => {
-		const searchParams = new URLSearchParams();
-		if (params.limit) searchParams.set('limit', params.limit.toString());
-		if (params.page) searchParams.set('page', params.page.toString());
-		if (params.search) searchParams.set('search', params.search);
-		// Only send onlyFailed if it's explicitly true or false (not undefined = show all)
-		if (params.onlyFailed === true) searchParams.set('onlyFailed', 'true');
-		if (params.onlyFailed === false) searchParams.set('onlyFailed', 'false');
-		if (params.type) searchParams.set('type', params.type);
-		return request<JobsResponse>(`/api/dashboard/jobs?${searchParams}`);
-	},
-
-	deleteAllJobs: () =>
-		request<void>('/api/dashboard/jobs', { method: 'DELETE' }),
-
-	deleteJob: (jobId: string) =>
-		request<void>(`/api/dashboard/jobs/${jobId}`, { method: 'DELETE' }),
-
-	replayJob: (jobId: string, payload?: string) =>
-		request<Job>(`/api/dashboard/jobs/${jobId}/replay`, {
-			method: 'POST',
-			body: payload ? JSON.stringify({ payload }) : undefined
-		})
+	summary: () => request<DashboardSummary>('/api/dashboard/summary')
 };
 
 // Products API

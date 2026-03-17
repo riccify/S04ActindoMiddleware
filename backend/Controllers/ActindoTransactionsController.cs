@@ -1,5 +1,3 @@
-﻿using System.Diagnostics;
-using ActindoMiddleware.Application.Monitoring;
 using ActindoMiddleware.Application.Security;
 using ActindoMiddleware.Application.Services;
 using ActindoMiddleware.DTOs.Requests;
@@ -14,14 +12,11 @@ namespace ActindoMiddleware.Controllers;
 public sealed class ActindoTransactionsController : ControllerBase
 {
     private readonly TransactionService _transactionService;
-    private readonly IDashboardMetricsService _dashboardMetrics;
 
     public ActindoTransactionsController(
-        TransactionService transactionService,
-        IDashboardMetricsService dashboardMetrics)
+        TransactionService transactionService)
     {
         _transactionService = transactionService;
-        _dashboardMetrics = dashboardMetrics;
     }
 
     [HttpPost("get")]
@@ -37,37 +32,7 @@ public sealed class ActindoTransactionsController : ControllerBase
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
         var cancellationToken = cts.Token;
 
-        var jobHandle = await _dashboardMetrics.BeginJobAsync(
-            DashboardMetricType.Transaction,
-            DashboardJobEndpoints.TransactionsGet,
-            DashboardPayloadSerializer.Serialize(request),
-            cancellationToken);
-        using var jobScope = DashboardJobContext.Begin(jobHandle.Id);
-        var stopwatch = Stopwatch.StartNew();
-        var success = false;
-        string? responsePayload = null;
-        string? errorPayload = null;
-        try
-        {
-            var result = await _transactionService.GetTransactionsAsync(request, cancellationToken);
-            success = true;
-            responsePayload = DashboardPayloadSerializer.Serialize(result);
-            return StatusCode(StatusCodes.Status201Created, result);
-        }
-        catch (Exception ex)
-        {
-            errorPayload = DashboardPayloadSerializer.SerializeError(ex);
-            throw;
-        }
-        finally
-        {
-            await _dashboardMetrics.CompleteJobAsync(
-                jobHandle,
-                success,
-                stopwatch.Elapsed,
-                responsePayload,
-                errorPayload,
-                cancellationToken);
-        }
+        var result = await _transactionService.GetTransactionsAsync(request, cancellationToken);
+        return StatusCode(StatusCodes.Status201Created, result);
     }
 }

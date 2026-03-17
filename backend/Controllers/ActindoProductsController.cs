@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using ActindoMiddleware.Application.Monitoring;
+﻿using ActindoMiddleware.Application.Monitoring;
 using ActindoMiddleware.Application.Security;
 using ActindoMiddleware.Application.Services;
 using ActindoMiddleware.Application.Configuration;
@@ -130,7 +129,6 @@ public sealed class ActindoProductsController : ControllerBase
             if (navError != null) return navError;
 
             var capturedRequest = request;
-            var requestPayload = DashboardPayloadSerializer.Serialize(request);
             var sku = request.Product.sku;
 
             _jobQueue.Enqueue(sku, "create", request.BufferId, async ct =>
@@ -142,12 +140,6 @@ public sealed class ActindoProductsController : ControllerBase
                     using var scope = _scopeFactory.CreateScope();
                     var service = scope.ServiceProvider.GetRequiredService<ProductCreateService>();
 
-                    var jobHandle = await _dashboardMetrics.BeginJobAsync(
-                        DashboardMetricType.Product, DashboardJobEndpoints.ProductCreate, requestPayload, ct);
-                    using var jobScope = DashboardJobContext.Begin(jobHandle.Id);
-                    var sw = Stopwatch.StartNew();
-                    bool success = false; string? responsePayload = null; string? errorPayload = null;
-
                     try
                     {
                         var result = await service.CreateAsync(capturedRequest, ct);
@@ -155,7 +147,7 @@ public sealed class ActindoProductsController : ControllerBase
                         var hasVariants = product.Variants?.Count > 0;
 
                         await _dashboardMetrics.SaveProductAsync(
-                            jobHandle.Id, product.sku, GetProductName(product),
+                            Guid.NewGuid(), product.sku, GetProductName(product),
                             result.ProductId, hasVariants ? "master" : "single", null, null, ct);
 
                         if (result.Variants != null)
@@ -164,27 +156,19 @@ public sealed class ActindoProductsController : ControllerBase
                             {
                                 var variantDto = product.Variants?.FirstOrDefault(v => v.sku == variantResult.Sku);
                                 await _dashboardMetrics.SaveProductAsync(
-                                    jobHandle.Id, variantResult.Sku,
+                                    Guid.NewGuid(), variantResult.Sku,
                                     variantDto != null ? GetProductName(variantDto) : string.Empty,
                                     variantResult.Id, "child", product.sku, variantDto?._pim_varcode, ct);
                             }
                         }
 
-                        success = true;
-                        responsePayload = DashboardPayloadSerializer.Serialize(result);
                         await _navCallback.SendCallbackAsync(sku, capturedRequest.BufferId, ToNavCallbackPayload(sku, result, created: true), created: true, ct);
                     }
                     catch (Exception ex)
                     {
-                        errorPayload = DashboardPayloadSerializer.SerializeError(ex);
                         var navAck = await _navCallback.SendCallbackAsync(sku, capturedRequest.BufferId,
                             new { success = false, error = ex.Message }, created: true, ct);
                         if (!navAck) throw;
-                    }
-                    finally
-                    {
-                        await _dashboardMetrics.CompleteJobAsync(
-                            jobHandle, success, sw.Elapsed, responsePayload, errorPayload, ct);
                     }
                 }
                 finally
@@ -196,28 +180,16 @@ public sealed class ActindoProductsController : ControllerBase
             return Accepted(new { message = "Sync wird ausgeführt", bufferId = request.BufferId });
         }
 
-        var jobHandle2 = await _dashboardMetrics.BeginJobAsync(
-            DashboardMetricType.Product,
-            DashboardJobEndpoints.ProductCreate,
-            DashboardPayloadSerializer.Serialize(request),
-            cancellationToken);
-        using var jobScope2 = DashboardJobContext.Begin(jobHandle2.Id);
-        var stopwatch = Stopwatch.StartNew();
-        var success2 = false;
-        string? responsePayload2 = null;
-        string? errorPayload2 = null;
         var createProductLock = ProductLocks.GetOrAdd(request.Product.sku, _ => new SemaphoreSlim(1, 1));
         await createProductLock.WaitAsync(cancellationToken);
         try
         {
             var result = await _productCreateService.CreateAsync(request, cancellationToken);
-            success2 = true;
-            responsePayload2 = DashboardPayloadSerializer.Serialize(result);
 
             var product = request.Product;
             var hasVariants = product.Variants?.Count > 0;
             await _dashboardMetrics.SaveProductAsync(
-                jobHandle2.Id, product.sku, GetProductName(product),
+                Guid.NewGuid(), product.sku, GetProductName(product),
                 result.ProductId, hasVariants ? "master" : "single", null, null, cancellationToken);
 
             if (result.Variants != null)
@@ -227,23 +199,16 @@ public sealed class ActindoProductsController : ControllerBase
                     var variantDto = product.Variants?.FirstOrDefault(v => v.sku == variantResult.Sku);
                     var variantName = variantDto != null ? GetProductName(variantDto) : string.Empty;
                     await _dashboardMetrics.SaveProductAsync(
-                        jobHandle2.Id, variantResult.Sku, variantName,
+                        Guid.NewGuid(), variantResult.Sku, variantName,
                         variantResult.Id, "child", product.sku, variantDto?._pim_varcode, cancellationToken);
                 }
             }
 
             return Created(string.Empty, result);
         }
-        catch (Exception ex)
-        {
-            errorPayload2 = DashboardPayloadSerializer.SerializeError(ex);
-            throw;
-        }
         finally
         {
             createProductLock.Release();
-            await _dashboardMetrics.CompleteJobAsync(
-                jobHandle2, success2, stopwatch.Elapsed, responsePayload2, errorPayload2, cancellationToken);
         }
     }
 
@@ -370,7 +335,6 @@ public sealed class ActindoProductsController : ControllerBase
             if (navError != null) return navError;
 
             var capturedRequest = request;
-            var requestPayload = DashboardPayloadSerializer.Serialize(request);
             var sku = request.Product.sku;
 
             _jobQueue.Enqueue(sku, "save", request.BufferId, async ct =>
@@ -382,12 +346,6 @@ public sealed class ActindoProductsController : ControllerBase
                     using var scope = _scopeFactory.CreateScope();
                     var service = scope.ServiceProvider.GetRequiredService<ProductSaveService>();
 
-                    var jobHandle = await _dashboardMetrics.BeginJobAsync(
-                        DashboardMetricType.Product, DashboardJobEndpoints.ProductSave, requestPayload, ct);
-                    using var jobScope = DashboardJobContext.Begin(jobHandle.Id);
-                    var sw = Stopwatch.StartNew();
-                    bool success = false; string? responsePayload = null; string? errorPayload = null;
-
                     try
                     {
                         var result = await service.SaveAsync(capturedRequest, ct);
@@ -395,7 +353,7 @@ public sealed class ActindoProductsController : ControllerBase
                         var hasVariants = product.Variants?.Count > 0;
 
                         await _dashboardMetrics.SaveProductAsync(
-                            jobHandle.Id, product.sku, GetProductName(product),
+                            Guid.NewGuid(), product.sku, GetProductName(product),
                             result.ProductId, hasVariants ? "master" : "single", null, null, ct);
 
                         if (result.Variants != null)
@@ -404,27 +362,19 @@ public sealed class ActindoProductsController : ControllerBase
                             {
                                 var variantDto = product.Variants?.FirstOrDefault(v => v.sku == variantResult.Sku);
                                 await _dashboardMetrics.SaveProductAsync(
-                                    jobHandle.Id, variantResult.Sku,
+                                    Guid.NewGuid(), variantResult.Sku,
                                     variantDto != null ? GetProductName(variantDto) : string.Empty,
                                     variantResult.Id, "child", product.sku, variantDto?._pim_varcode, ct);
                             }
                         }
 
-                        success = true;
-                        responsePayload = DashboardPayloadSerializer.Serialize(result);
                         await _navCallback.SendCallbackAsync(sku, capturedRequest.BufferId, ToNavCallbackPayload(sku, result, created: false), created: false, ct);
                     }
                     catch (Exception ex)
                     {
-                        errorPayload = DashboardPayloadSerializer.SerializeError(ex);
                         var navAck = await _navCallback.SendCallbackAsync(sku, capturedRequest.BufferId,
                             new { success = false, error = ex.Message }, created: false, ct);
                         if (!navAck) throw;
-                    }
-                    finally
-                    {
-                        await _dashboardMetrics.CompleteJobAsync(
-                            jobHandle, success, sw.Elapsed, responsePayload, errorPayload, ct);
                     }
                 }
                 finally
@@ -436,28 +386,16 @@ public sealed class ActindoProductsController : ControllerBase
             return Accepted(new { message = "Sync wird ausgeführt", bufferId = request.BufferId });
         }
 
-        var jobHandle2 = await _dashboardMetrics.BeginJobAsync(
-            DashboardMetricType.Product,
-            DashboardJobEndpoints.ProductSave,
-            DashboardPayloadSerializer.Serialize(request),
-            cancellationToken);
-        using var jobScope2 = DashboardJobContext.Begin(jobHandle2.Id);
-        var stopwatch = Stopwatch.StartNew();
-        var success2 = false;
-        string? responsePayload2 = null;
-        string? errorPayload2 = null;
         var saveProductLock = ProductLocks.GetOrAdd(request.Product.sku, _ => new SemaphoreSlim(1, 1));
         await saveProductLock.WaitAsync(cancellationToken);
         try
         {
             var result = await _productSaveService.SaveAsync(request, cancellationToken);
-            success2 = true;
-            responsePayload2 = DashboardPayloadSerializer.Serialize(result);
 
             var product2 = request.Product;
             var hasVariants2 = product2.Variants?.Count > 0;
             await _dashboardMetrics.SaveProductAsync(
-                jobHandle2.Id, product2.sku, GetProductName(product2),
+                Guid.NewGuid(), product2.sku, GetProductName(product2),
                 result.ProductId, hasVariants2 ? "master" : "single", null, null, cancellationToken);
 
             if (result.Variants != null)
@@ -466,7 +404,7 @@ public sealed class ActindoProductsController : ControllerBase
                 {
                     var variantDto = product2.Variants?.FirstOrDefault(v => v.sku == variantResult.Sku);
                     await _dashboardMetrics.SaveProductAsync(
-                        jobHandle2.Id, variantResult.Sku,
+                        Guid.NewGuid(), variantResult.Sku,
                         variantDto != null ? GetProductName(variantDto) : string.Empty,
                         variantResult.Id, "child", product2.sku, variantDto?._pim_varcode, cancellationToken);
                 }
@@ -474,16 +412,9 @@ public sealed class ActindoProductsController : ControllerBase
 
             return Ok(result);
         }
-        catch (Exception ex)
-        {
-            errorPayload2 = DashboardPayloadSerializer.SerializeError(ex);
-            throw;
-        }
         finally
         {
             saveProductLock.Release();
-            await _dashboardMetrics.CompleteJobAsync(
-                jobHandle2, success2, stopwatch.Elapsed, responsePayload2, errorPayload2, cancellationToken);
         }
     }
 
@@ -502,16 +433,8 @@ public sealed class ActindoProductsController : ControllerBase
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
         var cancellationToken = cts.Token;
 
-        var jobHandle = await _dashboardMetrics.BeginJobAsync(
-            DashboardMetricType.Product,
-            DashboardJobEndpoints.ProductInventory,
-            DashboardPayloadSerializer.Serialize(request),
-            cancellationToken);
-        using var jobScope = DashboardJobContext.Begin(jobHandle.Id);
-        var stopwatch = Stopwatch.StartNew();
+        var syncJobId = Guid.NewGuid();
         var success = false;
-        string? responsePayload = null;
-        string? errorPayload = null;
         string? syncJobError = null;
 
         var inventorySkus = request.Inventories.Keys.ToList();
@@ -521,7 +444,7 @@ public sealed class ActindoProductsController : ControllerBase
             1 => inventorySkus[0],
             _ => $"{inventorySkus[0]} +{inventorySkus.Count - 1}"
         };
-        _jobQueue.RegisterSyncJob(jobHandle.Id, inventorySkuSummary, "inventory");
+        _jobQueue.RegisterSyncJob(syncJobId, inventorySkuSummary, "inventory");
 
         try
         {
@@ -610,25 +533,16 @@ public sealed class ActindoProductsController : ControllerBase
             }
 
             success = true;
-            responsePayload = DashboardPayloadSerializer.Serialize(results);
             return Ok(new { results });
         }
         catch (Exception ex)
         {
-            errorPayload = DashboardPayloadSerializer.SerializeError(ex);
             syncJobError = ex.Message;
             throw;
         }
         finally
         {
-            _jobQueue.CompleteSyncJob(jobHandle.Id, success, syncJobError);
-            await _dashboardMetrics.CompleteJobAsync(
-                jobHandle,
-                success,
-                stopwatch.Elapsed,
-                responsePayload,
-                errorPayload,
-                cancellationToken);
+            _jobQueue.CompleteSyncJob(syncJobId, success, syncJobError);
         }
     }
 
@@ -645,17 +559,8 @@ public sealed class ActindoProductsController : ControllerBase
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
         var cancellationToken = cts.Token;
 
-        var jobHandle = await _dashboardMetrics.BeginJobAsync(
-            DashboardMetricType.Product,
-            DashboardJobEndpoints.ProductPrice,
-            body.GetRawText(),
-            cancellationToken);
-
-        using var jobScope = DashboardJobContext.Begin(jobHandle.Id);
-        var stopwatch = Stopwatch.StartNew();
+        var priceSyncJobId = Guid.NewGuid();
         var success = false;
-        string? responsePayload = null;
-        string? errorPayload = null;
         string? priceSyncJobError = null;
 
         string priceSkuSummary;
@@ -671,7 +576,7 @@ public sealed class ActindoProductsController : ControllerBase
         {
             priceSkuSummary = ExtractPriceData(body).sku ?? "Preis";
         }
-        _jobQueue.RegisterSyncJob(jobHandle.Id, priceSkuSummary, "price");
+        _jobQueue.RegisterSyncJob(priceSyncJobId, priceSkuSummary, "price");
 
         try
         {
@@ -744,25 +649,16 @@ public sealed class ActindoProductsController : ControllerBase
             }
 
             success = true;
-            responsePayload = DashboardPayloadSerializer.Serialize(results);
             return Ok(new { results });
         }
         catch (Exception ex)
         {
-            errorPayload = DashboardPayloadSerializer.SerializeError(ex);
             priceSyncJobError = ex.Message;
             throw;
         }
         finally
         {
-            _jobQueue.CompleteSyncJob(jobHandle.Id, success, priceSyncJobError);
-            await _dashboardMetrics.CompleteJobAsync(
-                jobHandle,
-                success,
-                stopwatch.Elapsed,
-                responsePayload,
-                errorPayload,
-                cancellationToken);
+            _jobQueue.CompleteSyncJob(priceSyncJobId, success, priceSyncJobError);
         }
     }
 
@@ -812,7 +708,6 @@ public sealed class ActindoProductsController : ControllerBase
 
             var capturedInventories = request.Inventories;
             var capturedBufferId = request.BufferId;
-            var requestPayload = DashboardPayloadSerializer.Serialize(request);
 
             _jobQueue.Enqueue(masterSku, "full", request.BufferId, async ct =>
             {
@@ -822,12 +717,6 @@ public sealed class ActindoProductsController : ControllerBase
                 {
                     using var scope = _scopeFactory.CreateScope();
                     var actindoClient = scope.ServiceProvider.GetRequiredService<ActindoClient>();
-
-                    var jobHandle = await _dashboardMetrics.BeginJobAsync(
-                        DashboardMetricType.Product, DashboardJobEndpoints.ProductFull, requestPayload, ct);
-                    using var jobScope = DashboardJobContext.Begin(jobHandle.Id);
-                    var sw = Stopwatch.StartNew();
-                    bool success = false; string? responsePayload = null; string? errorPayload = null;
 
                     try
                     {
@@ -840,32 +729,24 @@ public sealed class ActindoProductsController : ControllerBase
 
                         var hasVariants = results.Variants.Count > 0;
                         await _dashboardMetrics.SaveProductAsync(
-                            jobHandle.Id, masterSku, masterName,
+                            Guid.NewGuid(), masterSku, masterName,
                             results.MasterProductId, hasVariants ? "master" : "single", null, null, ct);
 
                         foreach (var variant in results.Variants.Where(v => v.Success))
                         {
                             variantNodes.TryGetValue(variant.Sku, out var vNode);
                             await _dashboardMetrics.SaveProductAsync(
-                                jobHandle.Id, variant.Sku, GetNameFromJsonNode(vNode),
+                                Guid.NewGuid(), variant.Sku, GetNameFromJsonNode(vNode),
                                 variant.ProductId, "child", masterSku, vNode?["_pim_varcode"]?.ToString(), ct);
                         }
 
-                        success = true;
-                        responsePayload = DashboardPayloadSerializer.Serialize(results);
                         await _navCallback.SendCallbackAsync(masterSku, capturedBufferId, results, created: results.MasterOperation == "created", ct);
                     }
                     catch (Exception ex)
                     {
-                        errorPayload = DashboardPayloadSerializer.SerializeError(ex);
                         var navAck = await _navCallback.SendCallbackAsync(masterSku, capturedBufferId,
                             new { success = false, error = ex.Message }, created: false, ct);
                         if (!navAck) throw;
-                    }
-                    finally
-                    {
-                        await _dashboardMetrics.CompleteJobAsync(
-                            jobHandle, success, sw.Elapsed, responsePayload, errorPayload, ct);
                     }
                 }
                 finally
@@ -878,18 +759,7 @@ public sealed class ActindoProductsController : ControllerBase
         }
 
         // Sync path
-        var jobHandle2 = await _dashboardMetrics.BeginJobAsync(
-            DashboardMetricType.Product,
-            DashboardJobEndpoints.ProductFull,
-            DashboardPayloadSerializer.Serialize(request),
-            cancellationToken);
-        using var jobScope2 = DashboardJobContext.Begin(jobHandle2.Id);
-        var stopwatch = Stopwatch.StartNew();
-        var success2 = false;
-        string? responsePayload2 = null;
-        string? errorPayload2 = null;
         SemaphoreSlim? fullSyncLock = null;
-
         try
         {
             fullSyncLock = ProductLocks.GetOrAdd(masterSku, _ => new SemaphoreSlim(1, 1));
@@ -904,31 +774,22 @@ public sealed class ActindoProductsController : ControllerBase
 
             var hasVariants2 = results.Variants.Count > 0;
             await _dashboardMetrics.SaveProductAsync(
-                jobHandle2.Id, masterSku, masterName2,
+                Guid.NewGuid(), masterSku, masterName2,
                 results.MasterProductId, hasVariants2 ? "master" : "single", null, null, cancellationToken);
 
             foreach (var variant in results.Variants.Where(v => v.Success))
             {
                 variantNodes2.TryGetValue(variant.Sku, out var vNode);
                 await _dashboardMetrics.SaveProductAsync(
-                    jobHandle2.Id, variant.Sku, GetNameFromJsonNode(vNode),
+                    Guid.NewGuid(), variant.Sku, GetNameFromJsonNode(vNode),
                     variant.ProductId, "child", masterSku, vNode?["_pim_varcode"]?.ToString(), cancellationToken);
             }
 
-            success2 = true;
-            responsePayload2 = DashboardPayloadSerializer.Serialize(results);
             return Ok(results);
-        }
-        catch (Exception ex)
-        {
-            errorPayload2 = DashboardPayloadSerializer.SerializeError(ex);
-            throw;
         }
         finally
         {
             fullSyncLock?.Release();
-            await _dashboardMetrics.CompleteJobAsync(
-                jobHandle2, success2, stopwatch.Elapsed, responsePayload2, errorPayload2, cancellationToken);
         }
     }
 

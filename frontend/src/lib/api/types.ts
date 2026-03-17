@@ -78,34 +78,6 @@ export interface DashboardSummary {
 	actindo: ActindoStatus;
 }
 
-// Job Types
-export interface ActindoLog {
-	endpoint: string;
-	requestPayload: string;
-	responsePayload: string | null;
-	success: boolean;
-	createdAt: string;
-}
-
-export interface Job {
-	id: string;
-	type: 'Product' | 'Customer' | 'Transaction' | 'Media';
-	endpoint: string;
-	success: boolean;
-	durationMilliseconds: number;
-	startedAt: string;
-	completedAt: string | null;
-	requestPayload: string;
-	responsePayload: string | null;
-	errorPayload: string | null;
-	actindoLogs: ActindoLog[];
-}
-
-export interface JobsResponse {
-	jobs: Job[];
-	total: number;
-}
-
 // Product Types
 export type VariantStatus = 'single' | 'master' | 'child';
 

@@ -1,4 +1,3 @@
-﻿using System.Diagnostics;
 using ActindoMiddleware.Application.Monitoring;
 using ActindoMiddleware.Application.Security;
 using ActindoMiddleware.Application.Services;
@@ -41,47 +40,17 @@ public sealed class ActindoCustomersController : ControllerBase
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
         var cancellationToken = cts.Token;
 
-        var jobHandle = await _dashboardMetrics.BeginJobAsync(
-            DashboardMetricType.Customer,
-            DashboardJobEndpoints.CustomerCreate,
-            DashboardPayloadSerializer.Serialize(request),
+        var result = await _customerCreateService.CreateAsync(request, cancellationToken);
+
+        // Save customer to Customers table
+        await _dashboardMetrics.SaveCustomerAsync(
+            Guid.NewGuid(),
+            result.CustomerId,
+            request.Customer._customer_debitorennumber ?? string.Empty,
+            request.Customer.shortName ?? string.Empty,
             cancellationToken);
-        using var jobScope = DashboardJobContext.Begin(jobHandle.Id);
-        var stopwatch = Stopwatch.StartNew();
-        var success = false;
-        string? responsePayload = null;
-        string? errorPayload = null;
-        try
-        {
-            var result = await _customerCreateService.CreateAsync(request, cancellationToken);
-            success = true;
-            responsePayload = DashboardPayloadSerializer.Serialize(result);
 
-            // Save customer to Customers table
-            await _dashboardMetrics.SaveCustomerAsync(
-                jobHandle.Id,
-                result.CustomerId,
-                request.Customer._customer_debitorennumber ?? string.Empty,
-                request.Customer.shortName ?? string.Empty,
-                cancellationToken);
-
-            return Created(string.Empty, result);
-        }
-        catch (Exception ex)
-        {
-            errorPayload = DashboardPayloadSerializer.SerializeError(ex);
-            throw;
-        }
-        finally
-        {
-            await _dashboardMetrics.CompleteJobAsync(
-                jobHandle,
-                success,
-                stopwatch.Elapsed,
-                responsePayload,
-                errorPayload,
-                cancellationToken);
-        }
+        return Created(string.Empty, result);
     }
 
     [HttpPost("save")]
@@ -97,46 +66,16 @@ public sealed class ActindoCustomersController : ControllerBase
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
         var cancellationToken = cts.Token;
 
-        var jobHandle = await _dashboardMetrics.BeginJobAsync(
-            DashboardMetricType.Customer,
-            DashboardJobEndpoints.CustomerSave,
-            DashboardPayloadSerializer.Serialize(request),
+        var result = await _customerSaveService.SaveAsync(request, cancellationToken);
+
+        // Update customer in Customers table (upsert)
+        await _dashboardMetrics.SaveCustomerAsync(
+            Guid.NewGuid(),
+            result.CustomerId,
+            request.Customer._customer_debitorennumber ?? string.Empty,
+            request.Customer.shortName ?? string.Empty,
             cancellationToken);
-        using var jobScope = DashboardJobContext.Begin(jobHandle.Id);
-        var stopwatch = Stopwatch.StartNew();
-        var success = false;
-        string? responsePayload = null;
-        string? errorPayload = null;
-        try
-        {
-            var result = await _customerSaveService.SaveAsync(request, cancellationToken);
-            success = true;
-            responsePayload = DashboardPayloadSerializer.Serialize(result);
 
-            // Update customer in Customers table (upsert)
-            await _dashboardMetrics.SaveCustomerAsync(
-                jobHandle.Id,
-                result.CustomerId,
-                request.Customer._customer_debitorennumber ?? string.Empty,
-                request.Customer.shortName ?? string.Empty,
-                cancellationToken);
-
-            return Ok(result);
-        }
-        catch (Exception ex)
-        {
-            errorPayload = DashboardPayloadSerializer.SerializeError(ex);
-            throw;
-        }
-        finally
-        {
-            await _dashboardMetrics.CompleteJobAsync(
-                jobHandle,
-                success,
-                stopwatch.Elapsed,
-                responsePayload,
-                errorPayload,
-                cancellationToken);
-        }
+        return Ok(result);
     }
 }

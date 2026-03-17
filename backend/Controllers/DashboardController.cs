@@ -1,6 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
+using System;
 using ActindoMiddleware.Application.Monitoring;
 using ActindoMiddleware.Application.Security;
 using ActindoMiddleware.DTOs.Responses;
@@ -22,7 +20,6 @@ public sealed class DashboardController : ControllerBase
     private static readonly TimeSpan SummaryWindow = TimeSpan.FromDays(365 * 100);
     private readonly IDashboardMetricsService _metricsService;
     private readonly IAuthenticationService _authenticationService;
-    private readonly IJobReplayService _jobReplayService;
     private readonly IActindoAvailabilityTracker _availabilityTracker;
     private readonly IWebHostEnvironment _hostEnvironment;
     private readonly ILogger<DashboardController> _logger;
@@ -30,14 +27,12 @@ public sealed class DashboardController : ControllerBase
     public DashboardController(
         IDashboardMetricsService metricsService,
         IAuthenticationService authenticationService,
-        IJobReplayService jobReplayService,
         IActindoAvailabilityTracker availabilityTracker,
         IWebHostEnvironment hostEnvironment,
         ILogger<DashboardController> logger)
     {
         _metricsService = metricsService;
         _authenticationService = authenticationService;
-        _jobReplayService = jobReplayService;
         _availabilityTracker = availabilityTracker;
         _hostEnvironment = hostEnvironment;
         _logger = logger;
@@ -90,121 +85,12 @@ public sealed class DashboardController : ControllerBase
         return Ok(response);
     }
 
-    [HttpGet("jobs")]
-    [ProducesResponseType(typeof(DashboardJobsResponse), StatusCodes.Status200OK)]
-    public async Task<ActionResult<DashboardJobsResponse>> GetJobs(
-        [FromQuery] DashboardMetricType? type,
-        [FromQuery] int limit = 20,
-        [FromQuery] int page = 1,
-        [FromQuery] string? search = null,
-        [FromQuery] bool? onlyFailed = null,
-        CancellationToken cancellationToken = default)
-    {
-        limit = Math.Clamp(limit, 1, 200);
-        page = Math.Max(1, page);
-        var offset = (page - 1) * limit;
-
-        var jobsResult = await _metricsService.GetRecentJobsAsync(limit, offset, type, search, onlyFailed, cancellationToken);
-        var jobDtos = new List<DashboardJobDto>(jobsResult.Jobs.Count);
-        foreach (var job in jobsResult.Jobs)
-        {
-            var logs = await _metricsService.GetActindoLogsAsync(job.Id, cancellationToken);
-            jobDtos.Add(MapJob(job, logs));
-        }
-
-        var response = new DashboardJobsResponse
-        {
-            Jobs = jobDtos,
-            Total = jobsResult.Total
-        };
-
-        return Ok(response);
-    }
-
-    [HttpDelete("jobs")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [Authorize(Policy = AuthPolicies.Write)]
-    public async Task<IActionResult> ClearJobs(CancellationToken cancellationToken = default)
-    {
-        await _metricsService.ClearJobHistoryAsync(cancellationToken);
-        return NoContent();
-    }
-
-    [HttpDelete("jobs/{jobId:guid}")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [Authorize(Policy = AuthPolicies.Write)]
-    public async Task<IActionResult> DeleteJob(Guid jobId, CancellationToken cancellationToken = default)
-    {
-        var job = await _metricsService.GetJobAsync(jobId, cancellationToken);
-        if (job is null)
-            return NotFound();
-
-        await _metricsService.DeleteJobAsync(jobId, cancellationToken);
-        return NoContent();
-    }
-
-    [HttpPost("jobs/{jobId:guid}/replay")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [Authorize(Policy = AuthPolicies.Write)]
-    public async Task<IActionResult> ReplayJob(
-        Guid jobId,
-        [FromBody] ReplayJobRequest? request,
-        CancellationToken cancellationToken = default)
-    {
-        var job = await _metricsService.GetJobAsync(jobId, cancellationToken);
-        if (job == null)
-            return NotFound();
-
-        var payload = string.IsNullOrWhiteSpace(request?.Payload)
-            ? job.RequestPayload
-            : request!.Payload!;
-
-        try
-        {
-            var result = await _jobReplayService.ReplayAsync(job.Endpoint, payload, cancellationToken);
-            return Ok(result);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { error = ex.Message });
-        }
-    }
-
     private static DashboardMetricCard MapCard(string title, MetricSnapshot snapshot) => new()
     {
         Title = title,
         Success = snapshot.Success,
         Failed = snapshot.Failed,
         AverageDurationSeconds = snapshot.AverageDurationSeconds
-    };
-
-    private static DashboardJobDto MapJob(
-        DashboardJobRecord record,
-        IReadOnlyCollection<DashboardJobActindoLog> logs) => new()
-    {
-        Id = record.Id,
-        Type = record.Type,
-        Endpoint = record.Endpoint,
-        Success = record.Success,
-        DurationMilliseconds = record.DurationMilliseconds,
-        StartedAt = record.StartedAt,
-        CompletedAt = record.CompletedAt,
-        RequestPayload = record.RequestPayload,
-        ResponsePayload = record.ResponsePayload,
-        ErrorPayload = record.ErrorPayload,
-        ActindoLogs = logs.Select(MapActindoLog).ToArray()
-    };
-
-    private static DashboardJobActindoLogDto MapActindoLog(DashboardJobActindoLog log) => new()
-    {
-        Endpoint = log.Endpoint,
-        RequestPayload = log.RequestPayload,
-        ResponsePayload = log.ResponsePayload,
-        Success = log.Success,
-        CreatedAt = log.CreatedAt
     };
 
     private static OAuthStatusDto MapOAuth(OAuthStatusSnapshot snapshot)

@@ -12,7 +12,6 @@ public sealed class ActindoClient
 {
     private readonly HttpClient _httpClient;
     private readonly IAuthenticationService _authenticationService;
-    private readonly IDashboardMetricsService _dashboardMetrics;
     private readonly IActindoAvailabilityTracker _availabilityTracker;
     private readonly ProductJobQueue _productJobQueue;
     private readonly ILogger<ActindoClient> _logger;
@@ -21,14 +20,12 @@ public sealed class ActindoClient
     public ActindoClient(
         HttpClient httpClient,
         IAuthenticationService authenticationService,
-        IDashboardMetricsService dashboardMetrics,
         IActindoAvailabilityTracker availabilityTracker,
         ProductJobQueue productJobQueue,
         ILogger<ActindoClient> logger)
     {
         _httpClient = httpClient;
         _authenticationService = authenticationService;
-        _dashboardMetrics = dashboardMetrics;
         _availabilityTracker = availabilityTracker;
         _productJobQueue = productJobQueue;
         _logger = logger;
@@ -69,13 +66,11 @@ public sealed class ActindoClient
                 _logger.LogError("Actindo request to {Endpoint} failed with {StatusCode}: {Response}", endpoint, (int)response.StatusCode, responseContent);
                 _availabilityTracker.ReportFailure(ex);
                 AppendJobLog(endpoint, false, $"HTTP {(int)response.StatusCode}: {actindoError}", serializedPayload, responseContent);
-                await AppendActindoLogAsync(endpoint, serializedPayload, responseContent, false, cancellationToken);
                 throw ex;
             }
 
             _availabilityTracker.ReportSuccess();
             AppendJobLog(endpoint, true, requestPayload: serializedPayload, responsePayload: responseContent);
-            await AppendActindoLogAsync(endpoint, serializedPayload, responseContent, true, cancellationToken);
 
             using var document = JsonDocument.Parse(responseContent);
             return document.RootElement.Clone();
@@ -89,12 +84,6 @@ public sealed class ActindoClient
             _availabilityTracker.ReportFailure(ex);
             _logger.LogError(ex, "Actindo request to {Endpoint} failed.", endpoint);
             AppendJobLog(endpoint, false, ex.Message, requestPayload: serializedPayload);
-            await AppendActindoLogAsync(
-                endpoint,
-                serializedPayload,
-                DashboardPayloadSerializer.SerializeError(ex),
-                false,
-                cancellationToken);
             throw;
         }
     }
@@ -116,32 +105,5 @@ public sealed class ActindoClient
         }
         catch { }
         return null;
-    }
-
-    private async Task AppendActindoLogAsync(
-        string endpoint,
-        string requestPayload,
-        string? responsePayload,
-        bool success,
-        CancellationToken cancellationToken)
-    {
-        var jobId = DashboardJobContext.CurrentJobId;
-        if (!jobId.HasValue)
-            return;
-
-        try
-        {
-            await _dashboardMetrics.AppendActindoLogAsync(
-                jobId.Value,
-                endpoint,
-                requestPayload,
-                responsePayload,
-                success,
-                cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to persist Actindo log for job {JobId}", jobId);
-        }
     }
 }

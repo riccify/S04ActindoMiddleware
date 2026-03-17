@@ -181,7 +181,6 @@ public sealed class ProductsController : ControllerBase
             return StatusCode(StatusCodes.Status502BadGateway, new { error = ex.Message });
         }
 
-        await _metricsService.DeleteJobAsync(request.JobId, cancellationToken);
         return NoContent();
     }
 }
