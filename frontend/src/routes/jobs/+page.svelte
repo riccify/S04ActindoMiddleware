@@ -12,7 +12,8 @@
 		ChevronRight,
 		Terminal,
 		CircleCheck,
-		CircleX
+		CircleX,
+		Play
 	} from 'lucide-svelte';
 	import type { ProductJobInfo, ProductJobLogEntry } from '$api/types';
 	import { products as productsApi } from '$api/client';
@@ -34,11 +35,41 @@
 	// Payload modal state
 	let selectedLogEntry = $state<ProductJobLogEntry | null>(null);
 	let payloadModalOpen = $state(false);
+	let editablePayload = $state('');
+	let replayLoading = $state(false);
+	let replayResponsePayload = $state<string | null>(null);
+	let replaySuccess = $state<boolean | null>(null);
+	let replayError = $state<string | null>(null);
 
 	function openPayloadModal(entry: ProductJobLogEntry, e: MouseEvent) {
 		e.stopPropagation();
 		selectedLogEntry = entry;
+		editablePayload = formatJson(entry.requestPayload);
+		replayResponsePayload = null;
+		replaySuccess = null;
+		replayError = null;
 		payloadModalOpen = true;
+	}
+
+	async function handleReplay() {
+		if (!selectedLogEntry) return;
+		replayLoading = true;
+		replayResponsePayload = null;
+		replaySuccess = null;
+		replayError = null;
+		try {
+			const result = await productsApi.logReplay(selectedLogEntry.endpoint, editablePayload);
+			replaySuccess = result.success;
+			replayResponsePayload = result.responsePayload
+				? formatJson(result.responsePayload)
+				: null;
+			replayError = result.error ?? null;
+		} catch (err) {
+			replaySuccess = false;
+			replayError = err instanceof Error ? err.message : 'Unbekannter Fehler';
+		} finally {
+			replayLoading = false;
+		}
 	}
 
 	function formatJson(raw: string | null): string {
@@ -464,23 +495,57 @@
 			<p class="text-xs text-gray-500 font-mono break-all -mt-2">{selectedLogEntry.endpoint}</p>
 
 			<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-				<!-- Request -->
+				<!-- Request (editable) -->
 				<div>
 					<div class="flex items-center gap-2 mb-2">
 						<span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Request</span>
+						<span class="text-xs text-gray-600">· bearbeitbar</span>
 					</div>
-					<pre class="text-xs font-mono bg-black/40 border border-white/10 rounded-lg p-3 overflow-x-auto max-h-96 text-gray-300 whitespace-pre">{formatJson(selectedLogEntry.requestPayload)}</pre>
+					<textarea
+						bind:value={editablePayload}
+						class="w-full text-xs font-mono bg-black/40 border border-white/10 rounded-lg p-3 text-gray-300 whitespace-pre resize-none h-[60vh] focus:outline-none focus:border-royal-500/50"
+						spellcheck="false"
+					></textarea>
 				</div>
 
 				<!-- Response -->
 				<div>
-					<div class="flex items-center gap-2 mb-2">
-						<span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Response</span>
-						{#if !selectedLogEntry.success}
-							<span class="text-xs px-1.5 py-0.5 rounded bg-red-900/40 text-red-400">Fehler</span>
-						{/if}
+					<div class="flex items-center justify-between mb-2">
+						<div class="flex items-center gap-2">
+							<span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Response</span>
+							{#if replaySuccess === null && !selectedLogEntry.success}
+								<span class="text-xs px-1.5 py-0.5 rounded bg-red-900/40 text-red-400">Fehler</span>
+							{:else if replaySuccess === true}
+								<span class="text-xs px-1.5 py-0.5 rounded bg-green-900/40 text-green-400">Replay OK</span>
+							{:else if replaySuccess === false}
+								<span class="text-xs px-1.5 py-0.5 rounded bg-red-900/40 text-red-400">Replay Fehler</span>
+							{/if}
+						</div>
+						<button
+							type="button"
+							onclick={handleReplay}
+							disabled={replayLoading}
+							class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+								bg-royal-600/30 border border-royal-500/40 text-royal-300
+								hover:bg-royal-600/50 hover:text-white transition-colors
+								disabled:opacity-50 disabled:cursor-not-allowed"
+						>
+							{#if replayLoading}
+								<Loader2 size={12} class="animate-spin" />
+								Läuft...
+							{:else}
+								<Play size={12} />
+								Replay
+							{/if}
+						</button>
 					</div>
-					<pre class="text-xs font-mono bg-black/40 border border-white/10 rounded-lg p-3 overflow-x-auto max-h-96 {selectedLogEntry.success ? 'text-gray-300' : 'text-red-300'} whitespace-pre">{formatJson(selectedLogEntry.responsePayload)}</pre>
+					{#if replayError}
+						<div class="text-xs font-mono bg-black/40 border border-red-500/30 rounded-lg p-3 text-red-400 h-[60vh] overflow-y-auto whitespace-pre-wrap">
+							{replayError}
+						</div>
+					{:else}
+						<pre class="text-xs font-mono bg-black/40 border border-white/10 rounded-lg p-3 overflow-auto h-[60vh] {replaySuccess === false ? 'text-red-300' : replaySuccess === true ? 'text-green-200' : selectedLogEntry.success ? 'text-gray-300' : 'text-red-300'} whitespace-pre">{replaySuccess !== null ? (replayResponsePayload ?? '—') : formatJson(selectedLogEntry.responsePayload)}</pre>
+					{/if}
 				</div>
 			</div>
 		</div>

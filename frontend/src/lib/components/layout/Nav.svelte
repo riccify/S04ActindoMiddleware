@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import { dev } from '$app/environment';
 	import { LogOut, LayoutDashboard, Package, Users, Settings, Activity, UserCircle, ArrowRightLeft, ChevronDown, Key, Zap } from 'lucide-svelte';
 	import { authStore, permissions, currentUser } from '$stores/auth';
 	import { dashboardStore } from '$stores/dashboard';
@@ -123,10 +124,19 @@
 	<div class="max-w-7xl mx-auto px-4 sm:px-6">
 		<div class="flex items-center justify-between h-16 gap-4">
 			<!-- Brand -->
-			<div class="flex-shrink-0">
+			<div class="flex-shrink-0 flex items-center gap-2.5">
 				<span class="text-lg font-bold tracking-wider uppercase text-white">
 					Actindo <span class="text-royal-400">Middleware</span>
 				</span>
+				{#if dev}
+					<span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-yellow-500/20 border border-yellow-500/40 text-yellow-300 uppercase tracking-wide">
+						Dev
+					</span>
+				{:else}
+					<span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-500/20 border border-green-500/40 text-green-300 uppercase tracking-wide">
+						Live
+					</span>
+				{/if}
 			</div>
 
 			<!-- Navigation Links -->

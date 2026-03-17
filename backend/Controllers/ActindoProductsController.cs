@@ -72,6 +72,32 @@ public sealed class ActindoProductsController : ControllerBase
     [Authorize(Policy = AuthPolicies.Read)]
     public IActionResult GetActiveJobs() => Ok(_jobQueue.GetAll());
 
+    [HttpPost("log-replay")]
+    [Authorize(Policy = AuthPolicies.Write)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ReplayLogEntry(
+        [FromBody] LogReplayRequest request,
+        CancellationToken _)
+    {
+        if (string.IsNullOrWhiteSpace(request.Endpoint) || string.IsNullOrWhiteSpace(request.RequestPayload))
+            return BadRequest("Endpoint und RequestPayload sind erforderlich.");
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        var cancellationToken = cts.Token;
+
+        try
+        {
+            var payload = JsonSerializer.Deserialize<JsonElement>(request.RequestPayload);
+            var response = await _actindoClient.PostAsync(request.Endpoint, payload, cancellationToken);
+            return Ok(new { success = true, responsePayload = JsonSerializer.Serialize(response) });
+        }
+        catch (Exception ex)
+        {
+            return Ok(new { success = false, responsePayload = (string?)null, error = ex.Message });
+        }
+    }
+
     private async Task<ActionResult?> ValidateNavSettingsForAsync(CancellationToken cancellationToken)
     {
         var settings = await _settingsStore.GetActindoSettingsAsync(cancellationToken);

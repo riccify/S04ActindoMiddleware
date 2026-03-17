@@ -177,7 +177,13 @@ export const products = {
 	activeJobs: () => request<ProductJobInfo[]>('/api/actindo/products/active-jobs'),
 
 	jobLogs: (jobId: string) =>
-		request<ProductJobLogEntry[]>(`/api/actindo/products/active-jobs/${jobId}/logs`)
+		request<ProductJobLogEntry[]>(`/api/actindo/products/active-jobs/${jobId}/logs`),
+
+	logReplay: (endpoint: string, requestPayload: string) =>
+		request<{ success: boolean; responsePayload: string | null; error?: string }>(
+			'/api/actindo/products/log-replay',
+			{ method: 'POST', body: JSON.stringify({ endpoint, requestPayload }) }
+		)
 };
 
 // Customers API
