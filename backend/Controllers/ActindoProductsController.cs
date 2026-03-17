@@ -472,13 +472,21 @@ public sealed class ActindoProductsController : ControllerBase
 
                     if (!mappings.TryGetValue(stockEntry.WarehouseId, out var warehouseId))
                     {
+                        var mappingError = $"Lager '{stockEntry.WarehouseId}' ist nicht gemappt. Bitte in den Einstellungen unter 'Lager-Konfiguration' eintragen.";
                         results.Add(new InventoryUpdateResultItem
                         {
                             Sku = sku,
                             WarehouseId = stockEntry.WarehouseId,
                             Success = false,
-                            Error = $"Lager '{stockEntry.WarehouseId}' ist nicht gemappt. Bitte in den Einstellungen unter 'Lager-Konfiguration' eintragen."
+                            Error = mappingError
                         });
+                        _jobQueue.AddLog(
+                            syncJobId,
+                            endpoints.CreateInventory,
+                            success: false,
+                            error: mappingError,
+                            requestPayload: JsonSerializer.Serialize(new { sku, warehouseId = stockEntry.WarehouseId, stock = stockEntry.Stock }),
+                            responsePayload: null);
                         continue;
                     }
 
@@ -938,13 +946,22 @@ public sealed class ActindoProductsController : ControllerBase
 
                     if (!mappings.TryGetValue(stockEntry.WarehouseId, out var warehouseId))
                     {
+                        var mappingError = $"Lager '{stockEntry.WarehouseId}' ist nicht gemappt. Bitte in den Einstellungen unter 'Lager-Konfiguration' eintragen.";
                         results.InventoryUpdates.Add(new InventoryUpdateResultItem
                         {
                             Sku = sku,
                             WarehouseId = stockEntry.WarehouseId,
                             Success = false,
-                            Error = $"Lager '{stockEntry.WarehouseId}' ist nicht gemappt. Bitte in den Einstellungen unter 'Lager-Konfiguration' eintragen."
+                            Error = mappingError
                         });
+                        if (ProductJobQueue.CurrentJobId is { } jobId)
+                            _jobQueue.AddLog(
+                                jobId,
+                                endpoints.CreateInventory,
+                                success: false,
+                                error: mappingError,
+                                requestPayload: JsonSerializer.Serialize(new { sku, warehouseId = stockEntry.WarehouseId, stock = stockEntry.Stock }),
+                                responsePayload: null);
                         continue;
                     }
 
