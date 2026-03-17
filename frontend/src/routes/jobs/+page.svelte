@@ -131,6 +131,8 @@
 		if (op === 'create') return 'Anlegen';
 		if (op === 'save') return 'Speichern';
 		if (op === 'full') return 'Full Sync';
+		if (op === 'inventory') return 'Bestand';
+		if (op === 'price') return 'Preis';
 		return op;
 	}
 
@@ -227,7 +229,7 @@
 		<div class="text-center py-16 text-gray-400">
 			<PackageSearch size={48} class="mx-auto mb-4 opacity-40" />
 			<p class="font-medium mb-1">Keine aktiven Jobs</p>
-			<p class="text-sm text-gray-500">Jobs erscheinen hier sobald ein Produkt-Sync mit await=false gestartet wird</p>
+			<p class="text-sm text-gray-500">Jobs erscheinen hier sobald ein Produkt-Sync gestartet wird</p>
 		</div>
 	{:else}
 		<div class="overflow-x-auto">

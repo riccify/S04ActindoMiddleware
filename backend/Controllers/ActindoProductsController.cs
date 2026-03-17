@@ -486,6 +486,16 @@ public sealed class ActindoProductsController : ControllerBase
         var success = false;
         string? responsePayload = null;
         string? errorPayload = null;
+        string? syncJobError = null;
+
+        var inventorySkus = request.Inventories.Keys.ToList();
+        var inventorySkuSummary = inventorySkus.Count switch
+        {
+            0 => "Bestand",
+            1 => inventorySkus[0],
+            _ => $"{inventorySkus[0]} +{inventorySkus.Count - 1}"
+        };
+        _jobQueue.RegisterSyncJob(jobHandle.Id, inventorySkuSummary, "inventory");
 
         try
         {
@@ -580,10 +590,12 @@ public sealed class ActindoProductsController : ControllerBase
         catch (Exception ex)
         {
             errorPayload = DashboardPayloadSerializer.SerializeError(ex);
+            syncJobError = ex.Message;
             throw;
         }
         finally
         {
+            _jobQueue.CompleteSyncJob(jobHandle.Id, success, syncJobError);
             await _dashboardMetrics.CompleteJobAsync(
                 jobHandle,
                 success,
@@ -618,6 +630,22 @@ public sealed class ActindoProductsController : ControllerBase
         var success = false;
         string? responsePayload = null;
         string? errorPayload = null;
+        string? priceSyncJobError = null;
+
+        string priceSkuSummary;
+        if (body.TryGetProperty("variant_prices", out var vpForSku) &&
+            vpForSku.ValueKind == JsonValueKind.Array &&
+            vpForSku.GetArrayLength() > 0)
+        {
+            var count = vpForSku.GetArrayLength();
+            var firstSku = ExtractPriceData(vpForSku[0]).sku ?? "Preis";
+            priceSkuSummary = count == 1 ? firstSku : $"{firstSku} +{count - 1}";
+        }
+        else
+        {
+            priceSkuSummary = ExtractPriceData(body).sku ?? "Preis";
+        }
+        _jobQueue.RegisterSyncJob(jobHandle.Id, priceSkuSummary, "price");
 
         try
         {
@@ -696,10 +724,12 @@ public sealed class ActindoProductsController : ControllerBase
         catch (Exception ex)
         {
             errorPayload = DashboardPayloadSerializer.SerializeError(ex);
+            priceSyncJobError = ex.Message;
             throw;
         }
         finally
         {
+            _jobQueue.CompleteSyncJob(jobHandle.Id, success, priceSyncJobError);
             await _dashboardMetrics.CompleteJobAsync(
                 jobHandle,
                 success,

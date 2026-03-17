@@ -86,6 +86,47 @@ public sealed class ProductJobQueue
     public IReadOnlyList<ProductJobLogEntry>? GetLogs(Guid jobId) =>
         _jobs.TryGetValue(jobId, out var job) ? job.GetLogs() : null;
 
+    /// <summary>
+    /// Registriert einen synchronen Job direkt als laufend (kein async-Queue).
+    /// Setzt den Job-Kontext für API-Logging. Der Aufrufer muss danach <see cref="CompleteSyncJob"/> aufrufen.
+    /// </summary>
+    public void RegisterSyncJob(Guid id, string sku, string operation)
+    {
+        var info = new ProductJobInfo
+        {
+            Id = id,
+            Sku = sku,
+            Operation = operation,
+            Status = ProductSyncJobStatus.Running,
+            StartedAt = DateTimeOffset.UtcNow
+        };
+        _jobs[info.Id] = info;
+        _currentJobId.Value = info.Id;
+        _logger.LogInformation(
+            "Sync job registered: {JobId} SKU={Sku} Operation={Operation}",
+            info.Id, sku, operation);
+    }
+
+    /// <summary>Markiert einen synchronen Job als abgeschlossen oder fehlgeschlagen.</summary>
+    public void CompleteSyncJob(Guid jobId, bool success, string? error = null)
+    {
+        _currentJobId.Value = null;
+        if (!_jobs.TryGetValue(jobId, out var info))
+            return;
+
+        info.Status = success ? ProductSyncJobStatus.Completed : ProductSyncJobStatus.Failed;
+        info.CompletedAt = DateTimeOffset.UtcNow;
+        info.Error = error;
+
+        _logger.LogInformation(
+            "Sync job {Status}: {JobId} SKU={Sku}",
+            info.Status, jobId, info.Sku);
+
+        if (success)
+            _ = Task.Delay(TimeSpan.FromDays(5))
+                    .ContinueWith(_ => _jobs.TryRemove(jobId, out _));
+    }
+
     public Guid Enqueue(string sku, string operation, string? bufferId, Func<CancellationToken, Task> work)
     {
         var info = new ProductJobInfo
