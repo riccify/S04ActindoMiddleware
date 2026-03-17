@@ -627,6 +627,59 @@ public sealed class DashboardMetricsService : IDashboardMetricsService
             using var connection = new SqliteConnection(_connectionString);
             connection.Open();
 
+            // Migration: if JobEvents still exists from old schema, rebuild Products without FK and drop old tables
+            using var migrationCheck = connection.CreateCommand();
+            migrationCheck.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='JobEvents';";
+            if (Convert.ToInt32(migrationCheck.ExecuteScalar()) > 0)
+            {
+                _logger.LogInformation("Migrating database: removing JobEvents FK from Products table");
+                using var migrationTx = connection.BeginTransaction();
+                try
+                {
+                    ExecuteNonQuery(connection, migrationTx,
+                        """
+                        CREATE TABLE Products_new
+                        (
+                            Id TEXT PRIMARY KEY NOT NULL,
+                            JobId TEXT NOT NULL,
+                            ActindoProductId INTEGER NULL,
+                            Sku TEXT NOT NULL,
+                            Name TEXT NOT NULL DEFAULT '',
+                            VariantStatus TEXT NOT NULL DEFAULT 'single',
+                            ParentSku TEXT NULL,
+                            VariantCode TEXT NULL,
+                            CreatedAt TEXT NOT NULL,
+                            LastPrice REAL NULL,
+                            LastPriceEmployee REAL NULL,
+                            LastPriceMember REAL NULL,
+                            LastStock INTEGER NULL,
+                            LastWarehouseId INTEGER NULL,
+                            LastPriceUpdatedAt TEXT NULL,
+                            LastStockUpdatedAt TEXT NULL
+                        )
+                        """);
+                    ExecuteNonQuery(connection, migrationTx,
+                        """
+                        INSERT INTO Products_new
+                            SELECT Id, JobId, ActindoProductId, Sku, Name, VariantStatus, ParentSku, VariantCode, CreatedAt,
+                                   NULL, NULL, NULL, NULL, NULL, NULL, NULL
+                            FROM Products
+                        """);
+                    ExecuteNonQuery(connection, migrationTx, "DROP TABLE Products");
+                    ExecuteNonQuery(connection, migrationTx, "ALTER TABLE Products_new RENAME TO Products");
+                    ExecuteNonQuery(connection, migrationTx, "DROP TABLE IF EXISTS JobActindoLogs");
+                    ExecuteNonQuery(connection, migrationTx, "DROP TABLE IF EXISTS JobEvents");
+                    migrationTx.Commit();
+                    _logger.LogInformation("Database migration completed successfully");
+                }
+                catch (Exception ex)
+                {
+                    migrationTx.Rollback();
+                    _logger.LogError(ex, "Database migration failed");
+                    throw;
+                }
+            }
+
             // Products table for storing created products with variants
             using var productsCommand = connection.CreateCommand();
             productsCommand.CommandText =
@@ -744,6 +797,14 @@ public sealed class DashboardMetricsService : IDashboardMetricsService
         using var alterCommand = connection.CreateCommand();
         alterCommand.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition};";
         alterCommand.ExecuteNonQuery();
+    }
+
+    private static void ExecuteNonQuery(SqliteConnection connection, SqliteTransaction transaction, string sql)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = sql;
+        cmd.ExecuteNonQuery();
     }
 
     private static string BuildConnectionString(string? configured, string contentRoot)
