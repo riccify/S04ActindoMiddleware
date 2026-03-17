@@ -269,6 +269,7 @@
 					<tr class="border-b border-white/10 text-left">
 						<th class="pb-3 pr-2 w-6"></th>
 						<th class="pb-3 pr-4 font-medium text-gray-400 whitespace-nowrap">Status</th>
+						<th class="pb-3 pr-4 font-medium text-gray-400 whitespace-nowrap">Zeitstempel</th>
 						<th class="pb-3 pr-4 font-medium text-gray-400 whitespace-nowrap">SKU</th>
 						<th class="pb-3 pr-4 font-medium text-gray-400 whitespace-nowrap">Operation</th>
 						<th class="pb-3 pr-4 font-medium text-gray-400 whitespace-nowrap">Queue-Zeit</th>
@@ -325,6 +326,12 @@
 										</span>
 									{/if}
 								</div>
+							</td>
+
+							<!-- Zeitstempel -->
+							<td class="py-3 pr-4 whitespace-nowrap">
+								<div class="text-xs tabular-nums text-gray-400">{new Date(job.queuedAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
+								<div class="text-xs tabular-nums text-gray-500">{new Date(job.queuedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
 							</td>
 
 							<!-- SKU -->
@@ -386,7 +393,7 @@
 						<!-- Log console row -->
 						{#if expandedJobId === job.id}
 							<tr>
-								<td colspan="8" class="pb-3 pt-0">
+								<td colspan="9" class="pb-3 pt-0">
 									<div class="mx-1 rounded-lg border border-white/10 bg-gray-950/80 overflow-hidden">
 										<!-- Console header -->
 										<div class="flex items-center gap-2 px-3 py-2 border-b border-white/10 bg-black/30">
