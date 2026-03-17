@@ -258,7 +258,10 @@ public sealed class AuthenticationService : IAuthenticationService
             ClientId = existingSettings.ClientId,
             ClientSecret = existingSettings.ClientSecret,
             TokenEndpoint = existingSettings.TokenEndpoint,
-            Endpoints = existingSettings.Endpoints
+            Endpoints = existingSettings.Endpoints,
+            NavApiUrl = existingSettings.NavApiUrl,
+            NavApiToken = existingSettings.NavApiToken,
+            WarehouseMappings = existingSettings.WarehouseMappings
         };
         await _settingsStore.SaveActindoSettingsAsync(clearedSettings, ct);
     }
@@ -282,7 +285,10 @@ public sealed class AuthenticationService : IAuthenticationService
                     ClientId = existingSettings.ClientId,
                     ClientSecret = existingSettings.ClientSecret,
                     TokenEndpoint = existingSettings.TokenEndpoint,
-                    Endpoints = existingSettings.Endpoints
+                    Endpoints = existingSettings.Endpoints,
+                    NavApiUrl = existingSettings.NavApiUrl,
+                    NavApiToken = existingSettings.NavApiToken,
+                    WarehouseMappings = existingSettings.WarehouseMappings
                 };
                 await _settingsStore.SaveActindoSettingsAsync(clearedSettings, CancellationToken.None);
             }
@@ -425,7 +431,10 @@ public sealed class AuthenticationService : IAuthenticationService
             ClientId = string.IsNullOrWhiteSpace(settings.ClientId) ? _clientId : settings.ClientId,
             ClientSecret = string.IsNullOrWhiteSpace(settings.ClientSecret) ? _clientSecret : settings.ClientSecret,
             TokenEndpoint = string.IsNullOrWhiteSpace(settings.TokenEndpoint) ? _tokenEndpoint?.ToString() : settings.TokenEndpoint,
-            Endpoints = settings.Endpoints
+            Endpoints = settings.Endpoints,
+            NavApiUrl = settings.NavApiUrl,
+            NavApiToken = settings.NavApiToken,
+            WarehouseMappings = settings.WarehouseMappings
         };
 
         await _settingsStore.SaveActindoSettingsAsync(settings, cancellationToken);
