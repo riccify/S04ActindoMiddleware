@@ -1,72 +1,167 @@
 # Actindo Middleware
 
-ASP.NET 10 Middleware mit Responsive-Frontend fuer Actindo-Workflows. Die App kapselt Produkt-, Kunden-, Transaktions- und Medienprozesse, zeigt Job-Laeufe im Dashboard, erlaubt Replays und verwaltet Actindo-Credentials, Endpoints und API-Bearer-Tokens zentral in SQLite.
+Eine interne Middleware-Anwendung zur Integration zwischen NAV und der Actindo PIM-Plattform. Das Backend basiert auf **ASP.NET Core 10**, das Frontend auf **SvelteKit**. Alle Konfigurationsdaten, Jobs und Nutzer werden in einer lokalen **SQLite-Datenbank** gespeichert.
 
-## Highlights
-- Actindo-Workflows: Produkte/Varianten anlegen oder speichern, Bilder hochladen, Kunden anlegen/speichern, Transaktionen abrufen.
-- Dashboard & Job Monitor: Live-Kacheln fuer Status/Fehler, Job-Tabelle mit Request/Response-JSON (scrollbar, Copy-Button), Replay/Delete, Actindo-Erreichbarkeit und Token-Gueltigkeit im Header.
-- Products & Customers: Tabellen fuer alle erzeugten Produkte/Kunden (Actindo-ID, SKU, Name, Debitorennummer, Variantenhinweis), Suche mit Live-Filter, Refresh. Optionaler Sync-Vorlauf ueber Actindo `GET_PRODUCT_LIST` (Button aktuell deaktiviert, Endpoint konfigurierbar).
-- Settings (Admin): Bearer/Refresh-Token, Actindo OAuth-Credentials, Actindo-Endpunkte (inkl. `GET_PRODUCT_LIST`) editierbar und in SQLite persistent.
-- User & Roles: Login mit Session-Cookie, Rollen `read`/`write`/`admin`; Registrierungen via `register.html` werden in `users.html` vom Admin freigegeben/abgelehnt. Navigation zeigt den eingeloggten User und blendet Admin-Seiten nur bei Rolle `admin` ein.
-- API-Schutz: Backend-Endpunkte akzeptieren Cookie-Login oder einen statischen Bearer-Token fuer Tools wie Postman.
+---
 
-## Architektur & Persistenz
-- Framework: .NET 10, klassische Controller.
-- Datenhaltung: SQLite `App_Data/dashboard.db` (prod) bzw. `App_Data/dashboard.dev.db` (Development) fuer Jobs, Settings, User, Registrierungen, Tokens und Actindo-Endpunkte.
-- Frontend: Statische Seiten unter `wwwroot/` (`dashboard.html`, `jobs.html`, `products.html`, `customers.html`, `users.html`, `register.html`, `settings.html`, `login.html`) mit gemeinsamer Navbar und Blau/Weiss-Optik.
+## Funktionsübersicht
 
-## Authentifizierung & Rollen
-- Cookie-Login: `POST /auth/login` legt ein Session-Cookie. Rollen:
-  - `read`: nur ansehen.
-  - `write`: zusaetzlich Replay/Loeschen.
-  - `admin`: alles inkl. User- und Settings-Verwaltung.
-- Registrierung: `POST /auth/register` oder `register.html` legt einen offenen Antrag an; Admin entscheidet in `users.html`.
-- Bootstrap: Falls noch keine User existieren: `POST /auth/bootstrap` erstellt den ersten Admin.
-- Bearer fuer API-Clients: Header `Authorization: Bearer <token>`. Default-Token (aenderbar via Config `StaticBearer:Token`):
-  `oS4rP1nXQk8sJ3hC7dG2zF9aVwB0YpLmR2tH8eQxU5bN7kZcA1fM6jTqE3vW9yL`
-- Zugriff: Frontend-Seiten leiten ohne Login auf `login.html` um; Settings/Users nur fuer Admins.
+### Produkte
+- Produkte und Varianten anlegen (`create`) und aktualisieren (`save`)
+- Vollständiger Produkt-Sync inkl. Varianten, Preisen und Beständen in einem Request (`full`)
+- Bestandsmengen pro Lagerort aktualisieren (`inventory`)
+- Preise aktualisieren (`price`)
+- Produktbilder hochladen
 
-## Wichtige Endpunkte
-### Actindo-Proxies
-- `POST /actindo/products/create` | `POST /actindo/products/save`
-- `POST /actindo/products/image`
-- `POST /actindo/customer/create` | `POST /actindo/customer/save`
-- `POST /actindo/transactions/get`
+### Kunden & Transaktionen
+- Kunden anlegen und aktualisieren
+- Transaktionen aus Actindo abrufen
 
-### Dashboard & Monitoring
-- `GET /dashboard/summary` (Kacheln + Actindo-Status)
-- `GET /dashboard/jobs` | `POST /dashboard/jobs/replay` | `DELETE /dashboard/jobs`
+### Job Monitor
+- Alle gestarteten Jobs (synchron und asynchron) erscheinen auf der **Jobs-Seite** mit Status, SKU, Operation und Laufzeit
+- Live-API-Log: Jeden Actindo-API-Call inklusive Request- und Response-Payload einsehbar
+- Asynchrone Jobs (mit `await=false`) werden in einer Queue mit max. 5 parallelen Slots verarbeitet und per NAV-Callback bestätigt
 
-### Produkte & Kunden
-- `GET /products` (persistierte Produkte der Middleware)
-- `GET /products/sync` (Vorlauf aus Actindo `GET_PRODUCT_LIST`, nur master/single)
-- `GET /customers` (aus Job-Historie ermittelte Kunden)
+### Dashboard
+- Übersichtskacheln für Produkte, Kunden, Transaktionen und Medien (Erfolge, Fehler, Ø Laufzeit)
+- Actindo-Verbindungsstatus und Token-Gültigkeit live im Header
+- Letzte Jobs mit Such- und Fehlerfilter, Replay und Löschen
 
-### Auth / User / Registrierungen
-- `POST /auth/login` | `POST /auth/logout` | `GET /auth/me`
-- `POST /auth/bootstrap` (erster Admin)
-- `POST /auth/register` (Neuregistrierung)
-- `GET /users` | `POST /users/{id}/role`
-- `GET /registrations` | `POST /registrations/{id}/approve` | `POST /registrations/{id}/reject`
+### Sync-Seite
+- Vergleich zwischen NAV, Actindo und Middleware für Produkte und Kunden
+- Erkennt fehlende, verwaiste und nicht übereinstimmende Einträge
 
-### Settings
-- `GET /settings` | `POST /settings`  
-  Speichert Actindo OAuth (TokenEndpoint, ClientId/Secret), Access/Refresh-Token, Actindo-Endpunkte inkl. `GET_PRODUCT_LIST`.
+### Einstellungen (Admin)
+- Actindo OAuth2-Zugangsdaten (TokenEndpoint, ClientId, ClientSecret)
+- Access- und Refresh-Token (manuell oder automatisch via OAuth-Flow)
+- Actindo API-Endpunkte konfigurierbar
+- NAV API-URL und -Token
+- Lagerort-Mappings (NAV-Lager → Actindo-Warehouse-ID)
 
-## Konfiguration
-- Basis-Config in `appsettings*.json` (OAuth-Defaults, ConnectionString, optional `StaticBearer:Token`). Laufzeitwerte fuer Tokens/Credentials/Endpoints werden in SQLite gepflegt und koennen im UI unter `settings.html` geaendert werden.
-- Dateien unter `App_Data/` werden bei Bedarf angelegt. Bei Schemaaenderungen kann die DB geloescht werden (Datenverlust beachten), sie wird automatisch neu erstellt.
+### Nutzer & Rollen
+- Rollen: `read` · `write` · `admin`
+- Registrierung mit Admin-Freigabe
+- Login via Session-Cookie; API-Zugriff alternativ per Bearer-Token
+
+---
+
+## Technischer Stack
+
+| Schicht | Technologie |
+|---|---|
+| Backend | ASP.NET Core 10, C# |
+| Frontend | SvelteKit, Tailwind CSS |
+| Datenbank | SQLite (`App_Data/dashboard.db`) |
+| Auth | Cookie-Session + statischer Bearer-Token |
+| Externe API | Actindo REST API (OAuth2) |
+
+---
+
+## API-Routen (Auszug)
+
+### Produkte
+```
+POST /api/actindo/products/create
+POST /api/actindo/products/save
+POST /api/actindo/products/full
+POST /api/actindo/products/inventory
+POST /api/actindo/products/price
+POST /api/actindo/products/image
+GET  /api/actindo/products/active-jobs
+GET  /api/actindo/products/active-jobs/{jobId}/logs
+```
+
+### Kunden & Transaktionen
+```
+POST /api/actindo/customers/create
+POST /api/actindo/customers/save
+POST /api/actindo/transactions/get
+```
+
+### Dashboard & Jobs
+```
+GET    /api/dashboard/summary
+GET    /api/dashboard/jobs
+POST   /api/dashboard/jobs/{id}/replay
+DELETE /api/dashboard/jobs/{id}
+```
+
+### Sync
+```
+GET /api/sync/products
+GET /api/sync/customers
+```
+
+### Auth & Nutzer
+```
+POST /api/auth/login
+POST /api/auth/logout
+GET  /api/auth/me
+POST /api/auth/bootstrap
+POST /api/auth/register
+GET  /api/users
+POST /api/users/{id}/role
+GET  /api/registrations
+POST /api/registrations/{id}/approve
+POST /api/registrations/{id}/reject
+```
+
+### Einstellungen
+```
+GET /api/settings/actindo
+PUT /api/settings/actindo
+```
+
+---
 
 ## Lokale Entwicklung
-```powershell
+
+```bash
+# Backend starten
+cd backend
 dotnet restore
 dotnet run
 ```
-- Development nutzt `App_Data/dashboard.dev.db` und erlaubt Swagger/OpenAPI unter `/openapi`.
-- Frontend unter `http://localhost:5094/` (`login.html` zuerst). Ohne Login erfolgt Redirect.
-- API-Tests per Bearer: `curl -H "Authorization: Bearer <token>" http://localhost:5094/dashboard/summary`
 
-## Weitere Hinweise
-- Actindo-Erreichbarkeit wird im Header visualisiert; Token-Refresh laeuft taktgesteuert und kann manuell in `settings.html` angepasst werden.
-- Job-Detailansichten zeigen Request/Response in scrollbaren Codebloecken mit Copy-Button.
-- Product-Sync-Button ist aktuell deaktiviert, Endpunkt `GET_PRODUCT_LIST` ist dennoch in Settings/DB hinterlegt.
+```bash
+# Frontend starten (separates Terminal)
+cd frontend
+npm install
+npm run dev
+```
+
+- Backend läuft auf `http://localhost:5094`
+- Im `Development`-Modus wird `App_Data/dashboard.dev.db` verwendet
+- OpenAPI/Swagger erreichbar unter `/openapi`
+- API-Tests per Bearer-Token:
+  ```
+  curl -H "Authorization: Bearer <token>" http://localhost:5094/api/dashboard/summary
+  ```
+
+Der Standard-Bearer-Token ist in `appsettings.json` unter `StaticBearer:Token` konfigurierbar.
+
+---
+
+## Datenbank
+
+Die SQLite-Datenbank wird beim ersten Start automatisch angelegt. Bei Schema-Änderungen kann die Datei gelöscht werden — sie wird neu erstellt (Datenverlust beachten).
+
+| Tabelle | Inhalt |
+|---|---|
+| `JobEvents` | Alle Job-Läufe mit Payload, Dauer und Status |
+| `JobActindoLogs` | Einzelne API-Calls je Job |
+| `Products` | Angelegte Produkte und Varianten |
+| `ProductStocks` | Letzter bekannter Bestand je SKU und Lager |
+| `Settings` | Actindo-Credentials, Endpoints, Mappings (JSON) |
+| `Users` | Nutzerkonten mit Rolle und Passwort-Hash |
+| `Registrations` | Offene Registrierungsanfragen |
+
+---
+
+## Erstes Setup
+
+1. Anwendung starten
+2. Unter `/register` oder via `POST /api/auth/bootstrap` den ersten Admin-Account anlegen
+3. In den **Einstellungen** Actindo OAuth-Zugangsdaten eintragen und Token abrufen
+4. Lagerort-Mappings konfigurieren (NAV-Lager-ID → Actindo-Warehouse-ID)
+5. NAV API-URL und Token hinterlegen (erforderlich für asynchrone Jobs mit `await=false`)
