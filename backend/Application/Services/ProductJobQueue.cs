@@ -124,7 +124,7 @@ public sealed class ProductJobQueue
 
         if (success)
             _ = Task.Delay(TimeSpan.FromDays(5))
-                    .ContinueWith(_ => _jobs.TryRemove(jobId, out _));
+                    .ContinueWith(t => _jobs.TryRemove(jobId, out _));
     }
 
     public Guid Enqueue(string sku, string operation, string? bufferId, Func<CancellationToken, Task> work)
