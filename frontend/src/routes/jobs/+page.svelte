@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
+	import { slide } from 'svelte/transition';
+	import { cubicOut } from 'svelte/easing';
 	import {
 		Loader2,
 		Clock,
@@ -13,7 +15,11 @@
 		Terminal,
 		CircleCheck,
 		CircleX,
-		Play
+		Play,
+		Box,
+		Boxes,
+		Link2,
+		Warehouse
 	} from 'lucide-svelte';
 	import type { ProductJobInfo, ProductJobLogEntry } from '$api/types';
 	import { products as productsApi } from '$api/client';
@@ -79,6 +85,62 @@
 		} catch {
 			return raw;
 		}
+	}
+
+	// --- Log entry metadata parsing ---
+
+	type LogEntryMeta =
+		| { type: 'master'; label: string; name: string | null; sku: string; actindoId: string | null }
+		| { type: 'variant'; label: string; name: string | null; sku: string; actindoId: string | null }
+		| { type: 'relation'; label: string; variantId: string; parentId: string }
+		| { type: 'inventory'; label: string; sku: string; warehouseId: string | null }
+		| { type: 'unknown' };
+
+	function parseLogEntryMeta(entry: ProductJobLogEntry, jobSku: string): LogEntryMeta {
+		try {
+			const req = entry.requestPayload ? JSON.parse(entry.requestPayload) : null;
+			const res = entry.responsePayload ? JSON.parse(entry.responsePayload) : null;
+
+			// Product create / save
+			if (req?.product?.sku !== undefined) {
+				const sku: string = req.product.sku;
+				const isMaster = sku === jobSku || sku === `${jobSku}-INDI`;
+				const name: string | null =
+					req.product['_pim_art_name__actindo_basic__de_DE'] ??
+					req.product['_pim_art_name__actindo_basic__en_US'] ??
+					null;
+				const actindoId: string | null =
+					res?.product?.id != null ? String(res.product.id) :
+					res?.product?.entityId != null ? String(res.product.entityId) :
+					res?.productId != null ? String(res.productId) :
+					null;
+				return { type: isMaster ? 'master' : 'variant', label: isMaster ? 'Master' : 'Variante', name, sku, actindoId };
+			}
+
+			// Relation / changeVariantMaster
+			if (req?.variantProduct?.id !== undefined) {
+				return {
+					type: 'relation',
+					label: 'Verknüpfung',
+					variantId: String(req.variantProduct.id),
+					parentId: String(req.parentProduct?.id ?? '?')
+				};
+			}
+
+			// Inventory
+			if (req?.inventory?.sku !== undefined) {
+				const warehouseId = req.inventory['_fulfillment_inventory_warehouse'];
+				return {
+					type: 'inventory',
+					label: 'Bestand',
+					sku: req.inventory.sku,
+					warehouseId: warehouseId != null ? String(warehouseId) : null
+				};
+			}
+		} catch {
+			// ignore
+		}
+		return { type: 'unknown' };
 	}
 
 	let runningCount = $derived(activeJobs.filter((j) => j.status === 'running').length);
@@ -294,11 +356,9 @@
 						>
 							<!-- Expand indicator -->
 							<td class="py-3 pr-2 text-gray-500">
-								{#if expandedJobId === job.id}
-									<ChevronDown size={14} />
-								{:else}
+								<div class="transition-transform duration-200 {expandedJobId === job.id ? 'rotate-90' : ''}">
 									<ChevronRight size={14} />
-								{/if}
+								</div>
 							</td>
 
 							<!-- Status -->
@@ -394,86 +454,141 @@
 						{#if expandedJobId === job.id}
 							<tr>
 								<td colspan="9" class="pb-3 pt-0">
-									<div class="mx-1 rounded-lg border border-white/10 bg-gray-950/80 overflow-hidden">
-										<!-- Console header -->
-										<div class="flex items-center gap-2 px-3 py-2 border-b border-white/10 bg-black/30">
-											<Terminal size={13} class="text-royal-400" />
-											<span class="text-xs font-mono font-medium text-royal-300">
-												Actindo API Log — {job.sku}
-											</span>
-											{#if job.status === 'running'}
-												<div class="flex items-center gap-1.5 ml-auto">
-													<span class="inline-block w-1.5 h-1.5 rounded-full bg-royal-400 animate-pulse"></span>
-													<span class="text-xs text-royal-400 font-mono">live</span>
-												</div>
-											{:else}
-												<span class="text-xs text-gray-500 font-mono ml-auto">
-													{jobLogs.length} {jobLogs.length === 1 ? 'Eintrag' : 'Einträge'} · Eintrag anklicken für Payload
+									<div transition:slide={{ duration: 220, easing: cubicOut }}>
+										<div class="mx-1 rounded-lg border border-white/10 bg-gray-950/80 overflow-hidden">
+											<!-- Console header -->
+											<div class="flex items-center gap-2 px-3 py-2 border-b border-white/10 bg-black/30">
+												<Terminal size={13} class="text-royal-400" />
+												<span class="text-xs font-mono font-medium text-royal-300">
+													Actindo API Log — {job.sku}
 												</span>
-											{/if}
-										</div>
-
-										<!-- Console body -->
-										<div class="font-mono text-xs p-3 space-y-1.5 max-h-64 overflow-y-auto">
-											{#if jobLogs.length === 0}
-												{#if job.status === 'queued'}
-													<p class="text-gray-500 italic">Wartet auf freien Slot...</p>
-												{:else if job.status === 'running'}
-													<div class="flex items-center gap-2 text-gray-500">
-														<Loader2 size={12} class="animate-spin text-royal-500" />
-														<span class="italic">Warte auf ersten API-Call...</span>
+												{#if job.status === 'running'}
+													<div class="flex items-center gap-1.5 ml-auto">
+														<span class="inline-block w-1.5 h-1.5 rounded-full bg-royal-400 animate-pulse"></span>
+														<span class="text-xs text-royal-400 font-mono">live</span>
 													</div>
 												{:else}
-													<p class="text-gray-500 italic">Keine API-Calls aufgezeichnet.</p>
+													<span class="text-xs text-gray-500 font-mono ml-auto">
+														{jobLogs.length} {jobLogs.length === 1 ? 'Eintrag' : 'Einträge'} · Eintrag anklicken für Payload
+													</span>
 												{/if}
-											{:else}
-												{#each jobLogs as entry}
-													<!-- svelte-ignore a11y_click_events_have_key_events a11y_interactive_supports_focus -->
-													<div
-														class="flex items-start gap-2 group cursor-pointer rounded px-1 -mx-1 hover:bg-white/5 transition-colors"
-														onclick={(e) => openPayloadModal(entry, e)}
-														title="Klicken für Request/Response Payload"
-														role="button"
-														tabindex="0"
-													>
-														<!-- Status icon -->
-														<div class="mt-0.5 shrink-0">
-															{#if entry.success}
-																<CircleCheck size={12} class="text-green-400" />
-															{:else}
-																<CircleX size={12} class="text-red-400" />
-															{/if}
+											</div>
+
+											<!-- Console body -->
+											<div class="text-xs p-3 space-y-0.5 max-h-72 overflow-y-auto">
+												{#if jobLogs.length === 0}
+													{#if job.status === 'queued'}
+														<p class="text-gray-500 italic font-mono">Wartet auf freien Slot...</p>
+													{:else if job.status === 'running'}
+														<div class="flex items-center gap-2 text-gray-500 font-mono">
+															<Loader2 size={12} class="animate-spin text-royal-500" />
+															<span class="italic">Warte auf ersten API-Call...</span>
 														</div>
+													{:else}
+														<p class="text-gray-500 italic font-mono">Keine API-Calls aufgezeichnet.</p>
+													{/if}
+												{:else}
+													{#each jobLogs as entry}
+														{@const meta = parseLogEntryMeta(entry, job.sku)}
+														<!-- svelte-ignore a11y_click_events_have_key_events a11y_interactive_supports_focus -->
+														<div
+															class="flex items-center gap-2 group cursor-pointer rounded-md px-2 py-1.5 -mx-2 hover:bg-white/5 transition-colors"
+															onclick={(e) => openPayloadModal(entry, e)}
+															title="Klicken für Request/Response Payload"
+															role="button"
+															tabindex="0"
+														>
+															<!-- Status icon -->
+															<div class="shrink-0">
+																{#if entry.success}
+																	<CircleCheck size={13} class="text-green-400" />
+																{:else}
+																	<CircleX size={13} class="text-red-400" />
+																{/if}
+															</div>
 
-														<!-- Timestamp -->
-														<span class="text-gray-600 shrink-0 tabular-nums">
-															{formatTime(entry.timestamp)}
-														</span>
-
-														<!-- Endpoint + error -->
-														<div class="min-w-0 flex-1">
-															<span class="{entry.success ? 'text-green-300' : 'text-red-300'} break-all">
-																{shortEndpoint(entry.endpoint)}
+															<!-- Timestamp -->
+															<span class="text-gray-600 shrink-0 tabular-nums font-mono w-16 text-[11px]">
+																{formatTime(entry.timestamp)}
 															</span>
-															{#if entry.error}
-																<span class="text-red-400/80 ml-2 break-all">→ {entry.error}</span>
+
+															<!-- Type badge -->
+															{#if meta.type === 'master'}
+																<span class="shrink-0 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-royal-600/30 text-royal-300 border border-royal-500/20">
+																	<Box size={9} />Master
+																</span>
+															{:else if meta.type === 'variant'}
+																<span class="shrink-0 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-900/40 text-purple-300 border border-purple-500/20">
+																	<Boxes size={9} />Variante
+																</span>
+															{:else if meta.type === 'relation'}
+																<span class="shrink-0 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-900/30 text-amber-300 border border-amber-500/20">
+																	<Link2 size={9} />Verknüpfung
+																</span>
+															{:else if meta.type === 'inventory'}
+																<span class="shrink-0 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-green-900/30 text-green-400 border border-green-500/20">
+																	<Warehouse size={9} />Bestand
+																</span>
 															{/if}
+
+															<!-- Main info -->
+															<div class="min-w-0 flex-1 flex items-center gap-2">
+																<!-- Endpoint -->
+																<span class="font-mono text-[11px] {entry.success ? 'text-gray-400' : 'text-red-400'} shrink-0">
+																	{shortEndpoint(entry.endpoint)}
+																</span>
+
+																<!-- Context details -->
+																{#if meta.type === 'master' || meta.type === 'variant'}
+																	<span class="font-mono text-[11px] {entry.success ? 'text-white/80' : 'text-red-300/70'} truncate">
+																		{meta.sku}
+																	</span>
+																	{#if meta.name}
+																		<span class="text-gray-500 text-[11px] truncate hidden sm:block" title={meta.name}>
+																			{meta.name}
+																		</span>
+																	{/if}
+																	{#if meta.actindoId}
+																		<span class="shrink-0 text-[10px] tabular-nums px-1.5 py-0.5 rounded bg-white/5 text-royal-400/80 font-mono border border-white/5">
+																			ID {meta.actindoId}
+																		</span>
+																	{/if}
+																{:else if meta.type === 'relation'}
+																	<span class="text-[11px] text-gray-400 font-mono shrink-0">
+																		#{meta.variantId} <span class="text-gray-600">→</span> #{meta.parentId}
+																	</span>
+																{:else if meta.type === 'inventory'}
+																	<span class="font-mono text-[11px] text-white/80 truncate">{meta.sku}</span>
+																	{#if meta.warehouseId}
+																		<span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-gray-500 font-mono border border-white/5">
+																			Lager {meta.warehouseId}
+																		</span>
+																	{/if}
+																{/if}
+
+																<!-- Error inline -->
+																{#if entry.error}
+																	<span class="text-red-400/80 text-[11px] truncate" title={entry.error}>
+																		→ {entry.error}
+																	</span>
+																{/if}
+															</div>
+
+															<!-- Click hint -->
+															<span class="text-gray-600 group-hover:text-gray-400 shrink-0 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity font-mono">
+																payload
+															</span>
 														</div>
+													{/each}
 
-														<!-- Click hint -->
-														<span class="text-gray-600 group-hover:text-gray-400 shrink-0 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
-															payload
-														</span>
-													</div>
-												{/each}
-
-												{#if job.status === 'running'}
-													<div class="flex items-center gap-2 text-gray-500 pt-0.5">
-														<Loader2 size={11} class="animate-spin text-royal-500 shrink-0" />
-														<span class="italic">Läuft...</span>
-													</div>
+													{#if job.status === 'running'}
+														<div class="flex items-center gap-2 text-gray-500 pt-1 px-2 font-mono">
+															<Loader2 size={11} class="animate-spin text-royal-500 shrink-0" />
+															<span class="italic text-[11px]">Läuft...</span>
+														</div>
+													{/if}
 												{/if}
-											{/if}
+											</div>
 										</div>
 									</div>
 								</td>
