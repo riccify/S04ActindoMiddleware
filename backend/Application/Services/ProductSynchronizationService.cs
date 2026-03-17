@@ -115,6 +115,7 @@ public abstract class ProductSynchronizationService
                         variant,
                         masterProductId,
                         variantEndpoint,
+                        isNew,
                         cancellationToken);
                     createdVariants.Add(indiResult);
                     continue;
@@ -130,17 +131,20 @@ public abstract class ProductSynchronizationService
                     variant.sku,
                     variantProductId);
 
-                var relationPayload = new
+                if (isNew)
                 {
-                    variantProduct = new { id = variantProductId },
-                    parentProduct = new { id = masterProductId }
-                };
-                LogEndpointPayload(endpoints.CreateRelation, relationPayload);
-                await _client.PostAsync(endpoints.CreateRelation, relationPayload, cancellationToken);
-                _logger.LogInformation(
-                    "Variant {Sku} linked to master {MasterId}",
-                    variant.sku,
-                    masterProductId);
+                    var relationPayload = new
+                    {
+                        variantProduct = new { id = variantProductId },
+                        parentProduct = new { id = masterProductId }
+                    };
+                    LogEndpointPayload(endpoints.CreateRelation, relationPayload);
+                    await _client.PostAsync(endpoints.CreateRelation, relationPayload, cancellationToken);
+                    _logger.LogInformation(
+                        "Variant {Sku} linked to master {MasterId}",
+                        variant.sku,
+                        masterProductId);
+                }
 
                 // Post variant inventory
                 foreach (var inventory in variant.Inventory ?? Enumerable.Empty<InventoryDto>())
@@ -330,6 +334,7 @@ public abstract class ProductSynchronizationService
         ProductDto variant,
         int masterProductId,
         string productEndpoint,
+        bool isNew,
         CancellationToken cancellationToken)
     {
         var endpoints = await ResolveEndpointsAsync(cancellationToken);
@@ -349,17 +354,20 @@ public abstract class ProductSynchronizationService
             masterSku,
             indiMasterId);
 
-        var relationPayload = new
+        if (isNew)
         {
-            variantProduct = new { id = indiMasterId },
-            parentProduct = new { id = masterProductId }
-        };
-        LogEndpointPayload(endpoints.CreateRelation, relationPayload);
-        await _client.PostAsync(endpoints.CreateRelation, relationPayload, cancellationToken);
-        _logger.LogInformation(
-            "INDI product {Sku} linked to master {MasterId}",
-            masterSku,
-            masterProductId);
+            var relationPayload = new
+            {
+                variantProduct = new { id = indiMasterId },
+                parentProduct = new { id = masterProductId }
+            };
+            LogEndpointPayload(endpoints.CreateRelation, relationPayload);
+            await _client.PostAsync(endpoints.CreateRelation, relationPayload, cancellationToken);
+            _logger.LogInformation(
+                "INDI product {Sku} linked to master {MasterId}",
+                masterSku,
+                masterProductId);
+        }
 
         return new VariantCreationResult(masterSku, indiMasterId);
     }
