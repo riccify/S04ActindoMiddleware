@@ -490,6 +490,26 @@
 		class="max-w-7xl"
 		onclose={() => (selectedLogEntry = null)}
 	>
+		{#snippet headerActions()}
+			<button
+				type="button"
+				onclick={handleReplay}
+				disabled={replayLoading}
+				class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+					bg-royal-600/30 border border-royal-500/40 text-royal-300
+					hover:bg-royal-600/50 hover:text-white transition-colors
+					disabled:opacity-50 disabled:cursor-not-allowed"
+			>
+				{#if replayLoading}
+					<Loader2 size={12} class="animate-spin" />
+					Läuft...
+				{:else}
+					<Play size={12} />
+					Replay
+				{/if}
+			</button>
+		{/snippet}
+
 		<div class="space-y-4">
 			<!-- Full endpoint -->
 			<p class="text-xs text-gray-500 font-mono break-all -mt-2">{selectedLogEntry.endpoint}</p>
@@ -510,34 +530,15 @@
 
 				<!-- Response -->
 				<div>
-					<div class="flex items-center justify-between mb-2">
-						<div class="flex items-center gap-2">
-							<span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Response</span>
-							{#if replaySuccess === null && !selectedLogEntry.success}
-								<span class="text-xs px-1.5 py-0.5 rounded bg-red-900/40 text-red-400">Fehler</span>
-							{:else if replaySuccess === true}
-								<span class="text-xs px-1.5 py-0.5 rounded bg-green-900/40 text-green-400">Replay OK</span>
-							{:else if replaySuccess === false}
-								<span class="text-xs px-1.5 py-0.5 rounded bg-red-900/40 text-red-400">Replay Fehler</span>
-							{/if}
-						</div>
-						<button
-							type="button"
-							onclick={handleReplay}
-							disabled={replayLoading}
-							class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
-								bg-royal-600/30 border border-royal-500/40 text-royal-300
-								hover:bg-royal-600/50 hover:text-white transition-colors
-								disabled:opacity-50 disabled:cursor-not-allowed"
-						>
-							{#if replayLoading}
-								<Loader2 size={12} class="animate-spin" />
-								Läuft...
-							{:else}
-								<Play size={12} />
-								Replay
-							{/if}
-						</button>
+					<div class="flex items-center gap-2 mb-2">
+						<span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Response</span>
+						{#if replaySuccess === null && !selectedLogEntry.success}
+							<span class="text-xs px-1.5 py-0.5 rounded bg-red-900/40 text-red-400">Fehler</span>
+						{:else if replaySuccess === true}
+							<span class="text-xs px-1.5 py-0.5 rounded bg-green-900/40 text-green-400">Replay OK</span>
+						{:else if replaySuccess === false}
+							<span class="text-xs px-1.5 py-0.5 rounded bg-red-900/40 text-red-400">Replay Fehler</span>
+						{/if}
 					</div>
 					{#if replayError}
 						<div class="text-xs font-mono bg-black/40 border border-red-500/30 rounded-lg p-3 text-red-400 h-[60vh] overflow-y-auto whitespace-pre-wrap">

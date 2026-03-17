@@ -6,6 +6,7 @@ namespace ActindoMiddleware.DTOs.Responses;
 public sealed class DashboardSummaryResponse
 {
     public DateTimeOffset GeneratedAt { get; init; } = DateTimeOffset.UtcNow;
+    public string Environment { get; init; } = "Production";
     public int ActiveJobs { get; init; }
     public DashboardMetricCard Products { get; init; } = new() { Title = "Produkte" };
     public DashboardMetricCard Customers { get; init; } = new() { Title = "Kunden" };

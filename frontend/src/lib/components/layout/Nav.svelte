@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { dev } from '$app/environment';
 	import { LogOut, LayoutDashboard, Package, Users, Settings, Activity, UserCircle, ArrowRightLeft, ChevronDown, Key, Zap } from 'lucide-svelte';
 	import { authStore, permissions, currentUser } from '$stores/auth';
 	import { dashboardStore } from '$stores/dashboard';
@@ -128,11 +127,11 @@
 				<span class="text-lg font-bold tracking-wider uppercase text-white">
 					Actindo <span class="text-royal-400">Middleware</span>
 				</span>
-				{#if dev}
+				{#if summary?.environment === 'Development'}
 					<span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-yellow-500/20 border border-yellow-500/40 text-yellow-300 uppercase tracking-wide">
 						Dev
 					</span>
-				{:else}
+				{:else if summary?.environment === 'Production'}
 					<span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-500/20 border border-green-500/40 text-green-300 uppercase tracking-wide">
 						Live
 					</span>

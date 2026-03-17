@@ -7,6 +7,7 @@ using ActindoMiddleware.DTOs.Responses;
 using ActindoMiddleware.Infrastructure.Actindo;
 using ActindoMiddleware.Infrastructure.Actindo.Auth;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 
@@ -23,6 +24,7 @@ public sealed class DashboardController : ControllerBase
     private readonly IAuthenticationService _authenticationService;
     private readonly IJobReplayService _jobReplayService;
     private readonly IActindoAvailabilityTracker _availabilityTracker;
+    private readonly IWebHostEnvironment _hostEnvironment;
     private readonly ILogger<DashboardController> _logger;
 
     public DashboardController(
@@ -30,12 +32,14 @@ public sealed class DashboardController : ControllerBase
         IAuthenticationService authenticationService,
         IJobReplayService jobReplayService,
         IActindoAvailabilityTracker availabilityTracker,
+        IWebHostEnvironment hostEnvironment,
         ILogger<DashboardController> logger)
     {
         _metricsService = metricsService;
         _authenticationService = authenticationService;
         _jobReplayService = jobReplayService;
         _availabilityTracker = availabilityTracker;
+        _hostEnvironment = hostEnvironment;
         _logger = logger;
     }
 
@@ -73,6 +77,7 @@ public sealed class DashboardController : ControllerBase
         var response = new DashboardSummaryResponse
         {
             GeneratedAt = DateTimeOffset.UtcNow,
+            Environment = _hostEnvironment.EnvironmentName,
             ActiveJobs = metricsSnapshot.ActiveJobs,
             Products = MapCard("Produkte", metricsSnapshot.ProductStats),
             Customers = MapCard("Kunden", metricsSnapshot.CustomerStats),

@@ -68,6 +68,7 @@ export interface ActindoStatus {
 
 export interface DashboardSummary {
 	generatedAt: string;
+	environment: string;
 	activeJobs: number;
 	products: MetricStats;
 	customers: MetricStats;

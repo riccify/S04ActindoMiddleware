@@ -9,6 +9,7 @@
 		onclose?: () => void;
 		children: Snippet;
 		footer?: Snippet;
+		headerActions?: Snippet;
 	}
 
 	let {
@@ -17,7 +18,8 @@
 		class: className = '',
 		onclose,
 		children,
-		footer
+		footer,
+		headerActions
 	}: Props = $props();
 
 	function handleBackdropClick(e: MouseEvent) {
@@ -61,16 +63,21 @@
 			{#if title}
 				<div class="flex items-center justify-between px-6 py-4 border-b border-white/10">
 					<h2 class="text-lg font-semibold">{title}</h2>
-					<button
-						type="button"
-						class="p-2 rounded-lg hover:bg-white/10 transition-colors"
-						onclick={() => {
-							open = false;
-							onclose?.();
-						}}
-					>
-						<X size={20} />
-					</button>
+					<div class="flex items-center gap-2">
+						{#if headerActions}
+							{@render headerActions()}
+						{/if}
+						<button
+							type="button"
+							class="p-2 rounded-lg hover:bg-white/10 transition-colors"
+							onclick={() => {
+								open = false;
+								onclose?.();
+							}}
+						>
+							<X size={20} />
+						</button>
+					</div>
 				</div>
 			{/if}
 
