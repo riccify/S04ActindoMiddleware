@@ -10,7 +10,6 @@
 		Zap,
 		RefreshCw,
 		PackageSearch,
-		ChevronDown,
 		ChevronRight,
 		Terminal,
 		CircleCheck,
@@ -19,7 +18,8 @@
 		Box,
 		Boxes,
 		Link2,
-		Warehouse
+		Warehouse,
+		Trash2
 	} from 'lucide-svelte';
 	import type { ProductJobInfo, ProductJobLogEntry } from '$api/types';
 	import { products as productsApi } from '$api/client';
@@ -35,7 +35,6 @@
 	// Log console state
 	let expandedJobId = $state<string | null>(null);
 	let jobLogs = $state<ProductJobLogEntry[]>([]);
-	let logsLoading = $state(false);
 	let logPollInterval: ReturnType<typeof setInterval> | null = null;
 
 	// Payload modal state
@@ -66,15 +65,24 @@
 		try {
 			const result = await productsApi.logReplay(selectedLogEntry.endpoint, editablePayload);
 			replaySuccess = result.success;
-			replayResponsePayload = result.responsePayload
-				? formatJson(result.responsePayload)
-				: null;
+			replayResponsePayload = result.responsePayload ? formatJson(result.responsePayload) : null;
 			replayError = result.error ?? null;
 		} catch (err) {
 			replaySuccess = false;
 			replayError = err instanceof Error ? err.message : 'Unbekannter Fehler';
 		} finally {
 			replayLoading = false;
+		}
+	}
+
+	async function deleteJob(job: ProductJobInfo, e: MouseEvent) {
+		e.stopPropagation();
+		try {
+			await productsApi.deleteJob(job.id);
+			activeJobs = activeJobs.filter((j) => j.id !== job.id);
+			if (expandedJobId === job.id) closeLogConsole();
+		} catch {
+			// ignore
 		}
 	}
 
@@ -90,10 +98,10 @@
 	// --- Log entry metadata parsing ---
 
 	type LogEntryMeta =
-		| { type: 'master'; label: string; name: string | null; sku: string; actindoId: string | null }
-		| { type: 'variant'; label: string; name: string | null; sku: string; actindoId: string | null }
-		| { type: 'relation'; label: string; variantId: string; parentId: string }
-		| { type: 'inventory'; label: string; sku: string; warehouseId: string | null }
+		| { type: 'master'; sku: string; actindoId: string | null }
+		| { type: 'variant'; sku: string; actindoId: string | null }
+		| { type: 'relation'; variantId: string; parentId: string }
+		| { type: 'inventory'; sku: string; warehouseId: string | null }
 		| { type: 'unknown' };
 
 	function parseLogEntryMeta(entry: ProductJobLogEntry, jobSku: string): LogEntryMeta {
@@ -101,38 +109,29 @@
 			const req = entry.requestPayload ? JSON.parse(entry.requestPayload) : null;
 			const res = entry.responsePayload ? JSON.parse(entry.responsePayload) : null;
 
-			// Product create / save
 			if (req?.product?.sku !== undefined) {
 				const sku: string = req.product.sku;
 				const isMaster = sku === jobSku || sku === `${jobSku}-INDI`;
-				const name: string | null =
-					req.product['_pim_art_name__actindo_basic__de_DE'] ??
-					req.product['_pim_art_name__actindo_basic__en_US'] ??
-					null;
 				const actindoId: string | null =
 					res?.product?.id != null ? String(res.product.id) :
 					res?.product?.entityId != null ? String(res.product.entityId) :
 					res?.productId != null ? String(res.productId) :
 					null;
-				return { type: isMaster ? 'master' : 'variant', label: isMaster ? 'Master' : 'Variante', name, sku, actindoId };
+				return { type: isMaster ? 'master' : 'variant', sku, actindoId };
 			}
 
-			// Relation / changeVariantMaster
 			if (req?.variantProduct?.id !== undefined) {
 				return {
 					type: 'relation',
-					label: 'Verknüpfung',
 					variantId: String(req.variantProduct.id),
 					parentId: String(req.parentProduct?.id ?? '?')
 				};
 			}
 
-			// Inventory
 			if (req?.inventory?.sku !== undefined) {
 				const warehouseId = req.inventory['_fulfillment_inventory_warehouse'];
 				return {
 					type: 'inventory',
-					label: 'Bestand',
 					sku: req.inventory.sku,
 					warehouseId: warehouseId != null ? String(warehouseId) : null
 				};
@@ -197,9 +196,7 @@
 		}
 		expandedJobId = job.id;
 		jobLogs = [];
-		logsLoading = true;
 		await tick();
-		logsLoading = false;
 		startLogPolling(job.id);
 	}
 
@@ -330,12 +327,12 @@
 				<thead>
 					<tr class="border-b border-white/10 text-left">
 						<th class="pb-3 pr-2 w-6"></th>
+						<th class="pb-3 pr-2 w-6"></th>
 						<th class="pb-3 pr-4 font-medium text-gray-400 whitespace-nowrap">Status</th>
 						<th class="pb-3 pr-4 font-medium text-gray-400 whitespace-nowrap">Zeitstempel</th>
 						<th class="pb-3 pr-4 font-medium text-gray-400 whitespace-nowrap">SKU</th>
 						<th class="pb-3 pr-4 font-medium text-gray-400 whitespace-nowrap">Operation</th>
-						<th class="pb-3 pr-4 font-medium text-gray-400 whitespace-nowrap">Queue-Zeit</th>
-						<th class="pb-3 pr-4 font-medium text-gray-400 whitespace-nowrap">Laufzeit</th>
+						<th class="pb-3 pr-4 font-medium text-gray-400 whitespace-nowrap">Dauer</th>
 						<th class="pb-3 pr-4 font-medium text-gray-400 whitespace-nowrap">Buffer ID</th>
 						<th class="pb-3 font-medium text-gray-400">Fehler</th>
 					</tr>
@@ -345,15 +342,23 @@
 						<!-- Job row -->
 						<tr
 							class="cursor-pointer transition-colors hover:bg-white/5
-								{job.status === 'running'
-								? 'bg-royal-600/5'
-								: job.status === 'failed'
-									? 'bg-red-900/5'
-									: ''}
+								{job.status === 'running' ? 'bg-royal-600/5' : job.status === 'failed' ? 'bg-red-900/5' : ''}
 								{expandedJobId === job.id ? 'bg-white/5' : ''}"
 							onclick={() => toggleJob(job)}
 							title="Klicken für API-Log"
 						>
+							<!-- Delete button -->
+							<td class="py-3 pr-1 w-6">
+								<button
+									type="button"
+									class="text-gray-600 hover:text-red-400 transition-colors p-0.5 rounded"
+									onclick={(e) => deleteJob(job, e)}
+									title="Job löschen"
+								>
+									<Trash2 size={13} />
+								</button>
+							</td>
+
 							<!-- Expand indicator -->
 							<td class="py-3 pr-2 text-gray-500">
 								<div class="transition-transform duration-200 {expandedJobId === job.id ? 'rotate-90' : ''}">
@@ -366,24 +371,16 @@
 								<div class="flex items-center gap-2 whitespace-nowrap">
 									{#if job.status === 'running'}
 										<Loader2 size={15} class="animate-spin text-royal-400 shrink-0" />
-										<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-royal-600/30 text-royal-300">
-											Läuft
-										</span>
+										<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-royal-600/30 text-royal-300">Läuft</span>
 									{:else if job.status === 'queued'}
 										<Clock size={15} class="text-gray-400 shrink-0" />
-										<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-700 text-gray-300">
-											Wartet
-										</span>
+										<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-700 text-gray-300">Wartet</span>
 									{:else if job.status === 'completed'}
 										<CheckCircle2 size={15} class="text-green-400 shrink-0" />
-										<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-green-900/40 text-green-300">
-											Fertig
-										</span>
+										<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-green-900/40 text-green-300">Fertig</span>
 									{:else}
 										<XCircle size={15} class="text-red-400 shrink-0" />
-										<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-red-900/40 text-red-300">
-											Fehler
-										</span>
+										<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-red-900/40 text-red-300">Fehler</span>
 									{/if}
 								</div>
 							</td>
@@ -407,32 +404,21 @@
 								</div>
 							</td>
 
-							<!-- Queue-Zeit -->
-							<td class="py-3 pr-4 text-gray-400 tabular-nums whitespace-nowrap">
-								{#if job.startedAt}
-									{elapsedSeconds(job.queuedAt, job.startedAt)}
-								{:else}
-									<span class="text-royal-400">{elapsedSeconds(job.queuedAt, null)}</span>
-								{/if}
-							</td>
-
-							<!-- Laufzeit -->
+							<!-- Dauer -->
 							<td class="py-3 pr-4 tabular-nums whitespace-nowrap">
 								{#if job.status === 'running'}
-									<span class="text-royal-300">{elapsedSeconds(job.startedAt, null)}</span>
-								{:else if job.startedAt}
-									<span class="text-gray-400">{elapsedSeconds(job.startedAt, job.completedAt)}</span>
+									<span class="text-royal-300">{elapsedSeconds(job.startedAt ?? job.queuedAt, null)}</span>
+								{:else if job.status === 'queued'}
+									<span class="text-gray-500 text-xs">—</span>
 								{:else}
-									<span class="text-gray-600">—</span>
+									<span class="text-gray-400">{elapsedSeconds(job.startedAt ?? job.queuedAt, job.completedAt)}</span>
 								{/if}
 							</td>
 
 							<!-- Buffer ID -->
 							<td class="py-3 pr-4">
 								{#if job.bufferId}
-									<span class="font-mono text-xs text-gray-400 max-w-[120px] truncate block" title={job.bufferId}>
-										{job.bufferId}
-									</span>
+									<span class="font-mono text-xs text-gray-400 max-w-[120px] truncate block" title={job.bufferId}>{job.bufferId}</span>
 								{:else}
 									<span class="text-gray-600">—</span>
 								{/if}
@@ -441,9 +427,7 @@
 							<!-- Fehler -->
 							<td class="py-3">
 								{#if job.error}
-									<span class="text-xs text-red-400 max-w-[200px] truncate block" title={job.error}>
-										{job.error}
-									</span>
+									<span class="text-xs text-red-400 max-w-[200px] truncate block" title={job.error}>{job.error}</span>
 								{:else}
 									<span class="text-gray-600">—</span>
 								{/if}
@@ -475,7 +459,7 @@
 											</div>
 
 											<!-- Console body -->
-											<div class="text-xs p-3 space-y-0.5 max-h-72 overflow-y-auto">
+											<div class="text-xs p-3 max-h-72 overflow-y-auto">
 												{#if jobLogs.length === 0}
 													{#if job.status === 'queued'}
 														<p class="text-gray-500 italic font-mono">Wartet auf freien Slot...</p>
@@ -488,105 +472,100 @@
 														<p class="text-gray-500 italic font-mono">Keine API-Calls aufgezeichnet.</p>
 													{/if}
 												{:else}
-													{#each jobLogs as entry}
-														{@const meta = parseLogEntryMeta(entry, job.sku)}
-														<!-- svelte-ignore a11y_click_events_have_key_events a11y_interactive_supports_focus -->
-														<div
-															class="flex items-center gap-2 group cursor-pointer rounded-md px-2 py-1.5 -mx-2 hover:bg-white/5 transition-colors"
-															onclick={(e) => openPayloadModal(entry, e)}
-															title="Klicken für Request/Response Payload"
-															role="button"
-															tabindex="0"
-														>
-															<!-- Status icon -->
-															<div class="shrink-0">
-																{#if entry.success}
-																	<CircleCheck size={13} class="text-green-400" />
-																{:else}
-																	<CircleX size={13} class="text-red-400" />
-																{/if}
-															</div>
+													<div class="space-y-0.5">
+														{#each jobLogs as entry}
+															{@const meta = parseLogEntryMeta(entry, job.sku)}
+															<!-- svelte-ignore a11y_click_events_have_key_events a11y_interactive_supports_focus -->
+															<div
+																class="grid gap-x-3 items-center group cursor-pointer rounded-md px-2 py-1.5 -mx-2 hover:bg-white/5 transition-colors"
+																style="grid-template-columns: 14px 52px 88px 160px 1fr auto"
+																onclick={(e) => openPayloadModal(entry, e)}
+																title="Klicken für Request/Response Payload"
+																role="button"
+																tabindex="0"
+															>
+																<!-- Status icon -->
+																<div class="shrink-0">
+																	{#if entry.success}
+																		<CircleCheck size={12} class="text-green-400" />
+																	{:else}
+																		<CircleX size={12} class="text-red-400" />
+																	{/if}
+																</div>
 
-															<!-- Timestamp -->
-															<span class="text-gray-600 shrink-0 tabular-nums font-mono w-16 text-[11px]">
-																{formatTime(entry.timestamp)}
-															</span>
+																<!-- Timestamp -->
+																<span class="text-gray-600 tabular-nums font-mono text-[11px]">
+																	{formatTime(entry.timestamp)}
+																</span>
 
-															<!-- Type badge -->
-															{#if meta.type === 'master'}
-																<span class="shrink-0 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-royal-600/30 text-royal-300 border border-royal-500/20">
-																	<Box size={9} />Master
-																</span>
-															{:else if meta.type === 'variant'}
-																<span class="shrink-0 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-900/40 text-purple-300 border border-purple-500/20">
-																	<Boxes size={9} />Variante
-																</span>
-															{:else if meta.type === 'relation'}
-																<span class="shrink-0 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-900/30 text-amber-300 border border-amber-500/20">
-																	<Link2 size={9} />Verknüpfung
-																</span>
-															{:else if meta.type === 'inventory'}
-																<span class="shrink-0 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-green-900/30 text-green-400 border border-green-500/20">
-																	<Warehouse size={9} />Bestand
-																</span>
-															{/if}
+																<!-- Type badge -->
+																<div>
+																	{#if meta.type === 'master'}
+																		<span class="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-royal-600/30 text-royal-300 border border-royal-500/20 whitespace-nowrap">
+																			<Box size={9} />Master
+																		</span>
+																	{:else if meta.type === 'variant'}
+																		<span class="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-900/40 text-purple-300 border border-purple-500/20 whitespace-nowrap">
+																			<Boxes size={9} />Variante
+																		</span>
+																	{:else if meta.type === 'relation'}
+																		<span class="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-900/30 text-amber-300 border border-amber-500/20 whitespace-nowrap">
+																			<Link2 size={9} />Verknüpfung
+																		</span>
+																	{:else if meta.type === 'inventory'}
+																		<span class="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-green-900/30 text-green-400 border border-green-500/20 whitespace-nowrap">
+																			<Warehouse size={9} />Bestand
+																		</span>
+																	{/if}
+																</div>
 
-															<!-- Main info -->
-															<div class="min-w-0 flex-1 flex items-center gap-2">
 																<!-- Endpoint -->
-																<span class="font-mono text-[11px] {entry.success ? 'text-gray-400' : 'text-red-400'} shrink-0">
+																<span class="font-mono text-[11px] {entry.success ? 'text-gray-400' : 'text-red-400'} truncate">
 																	{shortEndpoint(entry.endpoint)}
 																</span>
 
-																<!-- Context details -->
-																{#if meta.type === 'master' || meta.type === 'variant'}
-																	<span class="font-mono text-[11px] {entry.success ? 'text-white/80' : 'text-red-300/70'} truncate">
-																		{meta.sku}
-																	</span>
-																	{#if meta.name}
-																		<span class="text-gray-500 text-[11px] truncate hidden sm:block" title={meta.name}>
-																			{meta.name}
+																<!-- Details: SKU + ID or relation IDs -->
+																<div class="flex items-center gap-2 min-w-0">
+																	{#if meta.type === 'master' || meta.type === 'variant'}
+																		<span class="font-mono text-[11px] {entry.success ? 'text-white/80' : 'text-red-300/70'} truncate">
+																			{meta.sku}
 																		</span>
-																	{/if}
-																	{#if meta.actindoId}
-																		<span class="shrink-0 text-[10px] tabular-nums px-1.5 py-0.5 rounded bg-white/5 text-royal-400/80 font-mono border border-white/5">
-																			ID {meta.actindoId}
+																		{#if meta.actindoId}
+																			<span class="shrink-0 text-[10px] tabular-nums px-1.5 py-0.5 rounded bg-white/5 text-royal-400/80 font-mono border border-white/5 whitespace-nowrap">
+																				ID {meta.actindoId}
+																			</span>
+																		{/if}
+																	{:else if meta.type === 'relation'}
+																		<span class="text-[11px] text-gray-400 font-mono">
+																			#{meta.variantId} <span class="text-gray-600">→</span> #{meta.parentId}
 																		</span>
+																	{:else if meta.type === 'inventory'}
+																		<span class="font-mono text-[11px] text-white/80 truncate">{meta.sku}</span>
+																		{#if meta.warehouseId}
+																			<span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-gray-500 font-mono border border-white/5 whitespace-nowrap">
+																				Lager {meta.warehouseId}
+																			</span>
+																		{/if}
 																	{/if}
-																{:else if meta.type === 'relation'}
-																	<span class="text-[11px] text-gray-400 font-mono shrink-0">
-																		#{meta.variantId} <span class="text-gray-600">→</span> #{meta.parentId}
-																	</span>
-																{:else if meta.type === 'inventory'}
-																	<span class="font-mono text-[11px] text-white/80 truncate">{meta.sku}</span>
-																	{#if meta.warehouseId}
-																		<span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-gray-500 font-mono border border-white/5">
-																			Lager {meta.warehouseId}
-																		</span>
+																	{#if entry.error}
+																		<span class="text-red-400/80 text-[11px] truncate" title={entry.error}>→ {entry.error}</span>
 																	{/if}
-																{/if}
+																</div>
 
-																<!-- Error inline -->
-																{#if entry.error}
-																	<span class="text-red-400/80 text-[11px] truncate" title={entry.error}>
-																		→ {entry.error}
-																	</span>
-																{/if}
+																<!-- Click hint -->
+																<span class="text-gray-600 group-hover:text-gray-400 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity font-mono whitespace-nowrap">
+																	payload
+																</span>
 															</div>
+														{/each}
 
-															<!-- Click hint -->
-															<span class="text-gray-600 group-hover:text-gray-400 shrink-0 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity font-mono">
-																payload
-															</span>
-														</div>
-													{/each}
-
-													{#if job.status === 'running'}
-														<div class="flex items-center gap-2 text-gray-500 pt-1 px-2 font-mono">
-															<Loader2 size={11} class="animate-spin text-royal-500 shrink-0" />
-															<span class="italic text-[11px]">Läuft...</span>
-														</div>
-													{/if}
+														{#if job.status === 'running'}
+															<div class="flex items-center gap-2 text-gray-500 pt-1 px-2 font-mono">
+																<Loader2 size={11} class="animate-spin text-royal-500 shrink-0" />
+																<span class="italic text-[11px]">Läuft...</span>
+															</div>
+														{/if}
+													</div>
 												{/if}
 											</div>
 										</div>
@@ -633,11 +612,9 @@
 		{/snippet}
 
 		<div class="space-y-4">
-			<!-- Full endpoint -->
 			<p class="text-xs text-gray-500 font-mono break-all -mt-2">{selectedLogEntry.endpoint}</p>
 
 			<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-				<!-- Request (editable) -->
 				<div>
 					<div class="flex items-center gap-2 mb-2">
 						<span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Request</span>
@@ -650,7 +627,6 @@
 					></textarea>
 				</div>
 
-				<!-- Response -->
 				<div>
 					<div class="flex items-center gap-2 mb-2">
 						<span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Response</span>

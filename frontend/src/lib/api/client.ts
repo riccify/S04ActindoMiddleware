@@ -147,6 +147,9 @@ export const products = {
 	jobLogs: (jobId: string) =>
 		request<ProductJobLogEntry[]>(`/api/actindo/products/active-jobs/${jobId}/logs`),
 
+	deleteJob: (jobId: string) =>
+		request<void>(`/api/actindo/products/active-jobs/${jobId}`, { method: 'DELETE' }),
+
 	logReplay: (endpoint: string, requestPayload: string) =>
 		request<{ success: boolean; responsePayload: string | null; error?: string }>(
 			'/api/actindo/products/log-replay',

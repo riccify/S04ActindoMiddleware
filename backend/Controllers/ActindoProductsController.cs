@@ -71,6 +71,11 @@ public sealed class ActindoProductsController : ControllerBase
     [Authorize(Policy = AuthPolicies.Read)]
     public IActionResult GetActiveJobs() => Ok(_jobQueue.GetAll());
 
+    [HttpDelete("active-jobs/{jobId:guid}")]
+    [Authorize(Policy = AuthPolicies.Write)]
+    public IActionResult DeleteJob(Guid jobId) =>
+        _jobQueue.RemoveJob(jobId) ? NoContent() : NotFound();
+
     [HttpPost("log-replay")]
     [Authorize(Policy = AuthPolicies.Write)]
     [ProducesResponseType(StatusCodes.Status200OK)]

@@ -191,6 +191,8 @@ public sealed class ProductJobQueue
         }
     }
 
+    public bool RemoveJob(Guid jobId) => _jobs.TryRemove(jobId, out _);
+
     public IReadOnlyList<ProductJobInfo> GetAll() =>
         _jobs.Values.OrderBy(j => j.QueuedAt).ToList();
 }
