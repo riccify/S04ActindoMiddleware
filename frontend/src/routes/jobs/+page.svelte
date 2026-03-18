@@ -473,12 +473,24 @@
 													{/if}
 												{:else}
 													<div class="space-y-0.5">
+														<!-- Header row -->
+														<div class="grid gap-x-3 px-2 pb-1 mb-1 border-b border-white/5"
+															style="grid-template-columns: 14px 52px 88px minmax(140px, 300px) 180px 80px auto">
+															<div></div>
+															<span class="text-[10px] font-medium text-gray-600 uppercase tracking-wide">Zeit</span>
+															<span class="text-[10px] font-medium text-gray-600 uppercase tracking-wide">Typ</span>
+															<span class="text-[10px] font-medium text-gray-600 uppercase tracking-wide">Endpoint</span>
+															<span class="text-[10px] font-medium text-gray-600 uppercase tracking-wide">SKU</span>
+															<span class="text-[10px] font-medium text-gray-600 uppercase tracking-wide">ID</span>
+															<div></div>
+														</div>
+
 														{#each jobLogs as entry}
 															{@const meta = parseLogEntryMeta(entry, job.sku)}
 															<!-- svelte-ignore a11y_click_events_have_key_events a11y_interactive_supports_focus -->
 															<div
 																class="grid gap-x-3 items-center group cursor-pointer rounded-md px-2 py-1.5 -mx-2 hover:bg-white/5 transition-colors"
-																style="grid-template-columns: 14px 52px 88px minmax(120px, 260px) 180px 96px auto"
+																style="grid-template-columns: 14px 52px 88px minmax(140px, 300px) 180px 80px auto"
 																onclick={(e) => openPayloadModal(entry, e)}
 																title="Klicken für Request/Response Payload"
 																role="button"
@@ -542,15 +554,15 @@
 																	{/if}
 																</div>
 
-																<!-- ID / secondary detail (fixed 96px, always aligned) -->
+																<!-- ID / secondary detail (fixed 80px, always aligned) -->
 																<div>
 																	{#if (meta.type === 'master' || meta.type === 'variant') && meta.actindoId}
 																		<span class="text-[10px] tabular-nums px-1.5 py-0.5 rounded bg-white/5 text-royal-400/80 font-mono border border-white/5 whitespace-nowrap">
-																			ID {meta.actindoId}
+																			{meta.actindoId}
 																		</span>
 																	{:else if meta.type === 'inventory' && meta.warehouseId}
 																		<span class="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-gray-500 font-mono border border-white/5 whitespace-nowrap">
-																			Lager {meta.warehouseId}
+																			{meta.warehouseId}
 																		</span>
 																	{:else if entry.error && meta.type !== 'unknown'}
 																		<span class="text-red-400/70 text-[10px] truncate block" title={entry.error}>↳ {entry.error}</span>
