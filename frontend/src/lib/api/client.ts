@@ -150,6 +150,11 @@ export const products = {
 	deleteJob: (jobId: string) =>
 		request<void>(`/api/actindo/products/active-jobs/${jobId}`, { method: 'DELETE' }),
 
+	retryJob: (jobId: string) =>
+		request<{ message: string }>(`/api/actindo/products/active-jobs/${jobId}/retry`, {
+			method: 'POST'
+		}),
+
 	logReplay: (endpoint: string, requestPayload: string) =>
 		request<{ success: boolean; responsePayload: string | null; error?: string }>(
 			'/api/actindo/products/log-replay',
@@ -199,6 +204,9 @@ export const registrations = {
 // Settings API
 export const settings = {
 	get: () => request<ActindoSettings>('/api/settings/actindo'),
+
+	getActindoBaseUrl: () =>
+		request<{ actindoBaseUrl: string | null }>('/api/settings/actindo-base-url'),
 
 	update: (data: ActindoSettings) =>
 		request<void>('/api/settings/actindo', {

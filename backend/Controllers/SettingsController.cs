@@ -30,6 +30,14 @@ public sealed class SettingsController : ControllerBase
         _logger = logger;
     }
 
+    [HttpGet("actindo-base-url")]
+    [Authorize(Policy = AuthPolicies.Read)]
+    public async Task<IActionResult> GetActindoBaseUrl(CancellationToken cancellationToken)
+    {
+        var settings = await _settingsStore.GetActindoSettingsAsync(cancellationToken);
+        return Ok(new { actindoBaseUrl = settings.ActindoBaseUrl });
+    }
+
     [HttpGet("actindo")]
     public async Task<ActionResult<ActindoSettingsDto>> GetActindoSettings(CancellationToken cancellationToken)
     {
@@ -51,7 +59,8 @@ public sealed class SettingsController : ControllerBase
             Endpoints = settings.Endpoints ?? new(),
             NavApiUrl = settings.NavApiUrl,
             NavApiToken = settings.NavApiToken,
-            WarehouseMappings = settings.WarehouseMappings ?? new()
+            WarehouseMappings = settings.WarehouseMappings ?? new(),
+            ActindoBaseUrl = settings.ActindoBaseUrl
         });
     }
 
@@ -75,7 +84,8 @@ public sealed class SettingsController : ControllerBase
             Endpoints = payload.Endpoints ?? new(),
             NavApiUrl = payload.NavApiUrl,
             NavApiToken = payload.NavApiToken,
-            WarehouseMappings = payload.WarehouseMappings ?? new()
+            WarehouseMappings = payload.WarehouseMappings ?? new(),
+            ActindoBaseUrl = payload.ActindoBaseUrl
         };
 
         await _settingsStore.SaveActindoSettingsAsync(toSave, cancellationToken);

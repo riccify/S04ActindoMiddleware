@@ -133,54 +133,7 @@ public sealed class ActindoProductsController : ControllerBase
             var navError = await ValidateNavSettingsForAsync(cancellationToken);
             if (navError != null) return navError;
 
-            var capturedRequest = request;
-            var sku = request.Product.sku;
-
-            _jobQueue.Enqueue(sku, "create", request.BufferId, async ct =>
-            {
-                var productLock = ProductLocks.GetOrAdd(sku, _ => new SemaphoreSlim(1, 1));
-                await productLock.WaitAsync(ct);
-                try
-                {
-                    using var scope = _scopeFactory.CreateScope();
-                    var service = scope.ServiceProvider.GetRequiredService<ProductCreateService>();
-
-                    try
-                    {
-                        var result = await service.CreateAsync(capturedRequest, ct);
-                        var product = capturedRequest.Product;
-                        var hasVariants = product.Variants?.Count > 0;
-
-                        await _dashboardMetrics.SaveProductAsync(
-                            Guid.NewGuid(), product.sku, GetProductName(product),
-                            result.ProductId, hasVariants ? "master" : "single", null, null, ct);
-
-                        if (result.Variants != null)
-                        {
-                            foreach (var variantResult in result.Variants)
-                            {
-                                var variantDto = product.Variants?.FirstOrDefault(v => v.sku == variantResult.Sku);
-                                await _dashboardMetrics.SaveProductAsync(
-                                    Guid.NewGuid(), variantResult.Sku,
-                                    variantDto != null ? GetProductName(variantDto) : string.Empty,
-                                    variantResult.Id, "child", product.sku, variantDto?._pim_varcode, ct);
-                            }
-                        }
-
-                        await _navCallback.SendCallbackAsync(sku, capturedRequest.BufferId, ToNavCallbackPayload(sku, result, created: true), created: true, ct);
-                    }
-                    catch (Exception ex)
-                    {
-                        var navAck = await _navCallback.SendCallbackAsync(sku, capturedRequest.BufferId,
-                            new { success = false, error = ex.Message }, created: true, ct);
-                        if (!navAck) throw;
-                    }
-                }
-                finally
-                {
-                    productLock.Release();
-                }
-            });
+            EnqueueCreate(request, JsonSerializer.Serialize(request));
 
             return Accepted(new { message = "Sync wird ausgeführt", bufferId = request.BufferId });
         }
@@ -339,54 +292,7 @@ public sealed class ActindoProductsController : ControllerBase
             var navError = await ValidateNavSettingsForAsync(cancellationToken);
             if (navError != null) return navError;
 
-            var capturedRequest = request;
-            var sku = request.Product.sku;
-
-            _jobQueue.Enqueue(sku, "save", request.BufferId, async ct =>
-            {
-                var productLock = ProductLocks.GetOrAdd(sku, _ => new SemaphoreSlim(1, 1));
-                await productLock.WaitAsync(ct);
-                try
-                {
-                    using var scope = _scopeFactory.CreateScope();
-                    var service = scope.ServiceProvider.GetRequiredService<ProductSaveService>();
-
-                    try
-                    {
-                        var result = await service.SaveAsync(capturedRequest, ct);
-                        var product = capturedRequest.Product;
-                        var hasVariants = product.Variants?.Count > 0;
-
-                        await _dashboardMetrics.SaveProductAsync(
-                            Guid.NewGuid(), product.sku, GetProductName(product),
-                            result.ProductId, hasVariants ? "master" : "single", null, null, ct);
-
-                        if (result.Variants != null)
-                        {
-                            foreach (var variantResult in result.Variants)
-                            {
-                                var variantDto = product.Variants?.FirstOrDefault(v => v.sku == variantResult.Sku);
-                                await _dashboardMetrics.SaveProductAsync(
-                                    Guid.NewGuid(), variantResult.Sku,
-                                    variantDto != null ? GetProductName(variantDto) : string.Empty,
-                                    variantResult.Id, "child", product.sku, variantDto?._pim_varcode, ct);
-                            }
-                        }
-
-                        await _navCallback.SendCallbackAsync(sku, capturedRequest.BufferId, ToNavCallbackPayload(sku, result, created: false), created: false, ct);
-                    }
-                    catch (Exception ex)
-                    {
-                        var navAck = await _navCallback.SendCallbackAsync(sku, capturedRequest.BufferId,
-                            new { success = false, error = ex.Message }, created: false, ct);
-                        if (!navAck) throw;
-                    }
-                }
-                finally
-                {
-                    productLock.Release();
-                }
-            });
+            EnqueueSave(request, JsonSerializer.Serialize(request));
 
             return Accepted(new { message = "Sync wird ausgeführt", bufferId = request.BufferId });
         }
@@ -449,7 +355,7 @@ public sealed class ActindoProductsController : ControllerBase
             1 => inventorySkus[0],
             _ => $"{inventorySkus[0]} +{inventorySkus.Count - 1}"
         };
-        _jobQueue.RegisterSyncJob(syncJobId, inventorySkuSummary, "inventory");
+        _jobQueue.RegisterSyncJob(syncJobId, inventorySkuSummary, "inventory", JsonSerializer.Serialize(request));
 
         try
         {
@@ -589,7 +495,7 @@ public sealed class ActindoProductsController : ControllerBase
         {
             priceSkuSummary = ExtractPriceData(body).sku ?? "Preis";
         }
-        _jobQueue.RegisterSyncJob(priceSyncJobId, priceSkuSummary, "price");
+        _jobQueue.RegisterSyncJob(priceSyncJobId, priceSkuSummary, "price", JsonSerializer.Serialize(body));
 
         try
         {
@@ -719,54 +625,7 @@ public sealed class ActindoProductsController : ControllerBase
                 return navError;
             }
 
-            var capturedInventories = request.Inventories;
-            var capturedBufferId = request.BufferId;
-
-            _jobQueue.Enqueue(masterSku, "full", request.BufferId, async ct =>
-            {
-                var productLock = ProductLocks.GetOrAdd(masterSku, _ => new SemaphoreSlim(1, 1));
-                await productLock.WaitAsync(ct);
-                try
-                {
-                    using var scope = _scopeFactory.CreateScope();
-                    var actindoClient = scope.ServiceProvider.GetRequiredService<ActindoClient>();
-
-                    try
-                    {
-                        var results = await RunFullSyncCoreAsync(rawProduct, capturedInventories, actindoClient, ct);
-
-                        var masterNode = JsonNode.Parse(rawProduct) as JsonObject;
-                        var masterName = GetNameFromJsonNode(masterNode);
-                        var variantNodes = (masterNode?["variants"] as JsonArray)?.OfType<JsonObject>()
-                            .ToDictionary(v => v["sku"]?.ToString() ?? string.Empty, v => v) ?? [];
-
-                        var hasVariants = results.Variants.Count > 0;
-                        await _dashboardMetrics.SaveProductAsync(
-                            Guid.NewGuid(), masterSku, masterName,
-                            results.MasterProductId, hasVariants ? "master" : "single", null, null, ct);
-
-                        foreach (var variant in results.Variants.Where(v => v.Success))
-                        {
-                            variantNodes.TryGetValue(variant.Sku, out var vNode);
-                            await _dashboardMetrics.SaveProductAsync(
-                                Guid.NewGuid(), variant.Sku, GetNameFromJsonNode(vNode),
-                                variant.ProductId, "child", masterSku, vNode?["_pim_varcode"]?.ToString(), ct);
-                        }
-
-                        await _navCallback.SendCallbackAsync(masterSku, capturedBufferId, results, created: results.MasterOperation == "created", ct);
-                    }
-                    catch (Exception ex)
-                    {
-                        var navAck = await _navCallback.SendCallbackAsync(masterSku, capturedBufferId,
-                            new { success = false, error = ex.Message }, created: false, ct);
-                        if (!navAck) throw;
-                    }
-                }
-                finally
-                {
-                    productLock.Release();
-                }
-            });
+            EnqueueFull(rawProduct, masterSku, request.BufferId, request.Inventories, JsonSerializer.Serialize(request));
 
             return Accepted(new { message = "Sync wird ausgeführt", bufferId = request.BufferId });
         }
@@ -996,6 +855,184 @@ public sealed class ActindoProductsController : ControllerBase
         }
 
         return results;
+    }
+
+    [HttpPost("active-jobs/{jobId:guid}/retry")]
+    [Authorize(Policy = AuthPolicies.Write)]
+    public async Task<IActionResult> RetryJob(Guid jobId, CancellationToken ct)
+    {
+        var job = _jobQueue.Get(jobId);
+        if (job == null) return NotFound();
+        if (string.IsNullOrEmpty(job.NavRequestPayload))
+            return BadRequest("Kein NAV-Request gespeichert");
+
+        var navError = await ValidateNavSettingsForAsync(ct);
+        if (navError != null) return navError;
+
+        var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        switch (job.Operation)
+        {
+            case "create":
+            {
+                var req = JsonSerializer.Deserialize<CreateProductRequest>(job.NavRequestPayload, opts);
+                if (req?.Product == null) return BadRequest("Ungültiger gespeicherter Request");
+                EnqueueCreate(req, job.NavRequestPayload);
+                break;
+            }
+            case "save":
+            {
+                var req = JsonSerializer.Deserialize<SaveProductRequest>(job.NavRequestPayload, opts);
+                if (req?.Product == null) return BadRequest("Ungültiger gespeicherter Request");
+                EnqueueSave(req, job.NavRequestPayload);
+                break;
+            }
+            case "full":
+            {
+                var req = JsonSerializer.Deserialize<FullProductRequest>(job.NavRequestPayload, opts);
+                if (req == null || req.Product.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+                    return BadRequest("Ungültiger gespeicherter Request");
+                var rawProd = req.Product.GetRawText();
+                var sku = (JsonNode.Parse(rawProd) as JsonObject)?["sku"]?.ToString() ?? string.Empty;
+                if (string.IsNullOrEmpty(sku)) return BadRequest("SKU nicht gefunden");
+                EnqueueFull(rawProd, sku, req.BufferId, req.Inventories, job.NavRequestPayload);
+                break;
+            }
+            default:
+                return BadRequest($"Operation '{job.Operation}' kann nicht wiederholt werden");
+        }
+
+        return Accepted(new { message = "Retry gestartet" });
+    }
+
+    private void EnqueueCreate(CreateProductRequest request, string? navPayload = null)
+    {
+        var sku = request.Product.sku;
+        var capturedRequest = request;
+        _jobQueue.Enqueue(sku, "create", request.BufferId, async ct =>
+        {
+            var productLock = ProductLocks.GetOrAdd(sku, _ => new SemaphoreSlim(1, 1));
+            await productLock.WaitAsync(ct);
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var service = scope.ServiceProvider.GetRequiredService<ProductCreateService>();
+                try
+                {
+                    var result = await service.CreateAsync(capturedRequest, ct);
+                    var product = capturedRequest.Product;
+                    var hasVariants = product.Variants?.Count > 0;
+                    await _dashboardMetrics.SaveProductAsync(
+                        Guid.NewGuid(), product.sku, GetProductName(product),
+                        result.ProductId, hasVariants ? "master" : "single", null, null, ct);
+                    if (result.Variants != null)
+                    {
+                        foreach (var variantResult in result.Variants)
+                        {
+                            var variantDto = product.Variants?.FirstOrDefault(v => v.sku == variantResult.Sku);
+                            await _dashboardMetrics.SaveProductAsync(
+                                Guid.NewGuid(), variantResult.Sku,
+                                variantDto != null ? GetProductName(variantDto) : string.Empty,
+                                variantResult.Id, "child", product.sku, variantDto?._pim_varcode, ct);
+                        }
+                    }
+                    await _navCallback.SendCallbackAsync(sku, capturedRequest.BufferId, ToNavCallbackPayload(sku, result, created: true), created: true, ct);
+                }
+                catch (Exception ex)
+                {
+                    var navAck = await _navCallback.SendCallbackAsync(sku, capturedRequest.BufferId,
+                        new { success = false, error = ex.Message }, created: true, ct);
+                    if (!navAck) throw;
+                }
+            }
+            finally { productLock.Release(); }
+        }, navPayload);
+    }
+
+    private void EnqueueSave(SaveProductRequest request, string? navPayload = null)
+    {
+        var sku = request.Product.sku;
+        var capturedRequest = request;
+        _jobQueue.Enqueue(sku, "save", request.BufferId, async ct =>
+        {
+            var productLock = ProductLocks.GetOrAdd(sku, _ => new SemaphoreSlim(1, 1));
+            await productLock.WaitAsync(ct);
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var service = scope.ServiceProvider.GetRequiredService<ProductSaveService>();
+                try
+                {
+                    var result = await service.SaveAsync(capturedRequest, ct);
+                    var product = capturedRequest.Product;
+                    var hasVariants = product.Variants?.Count > 0;
+                    await _dashboardMetrics.SaveProductAsync(
+                        Guid.NewGuid(), product.sku, GetProductName(product),
+                        result.ProductId, hasVariants ? "master" : "single", null, null, ct);
+                    if (result.Variants != null)
+                    {
+                        foreach (var variantResult in result.Variants)
+                        {
+                            var variantDto = product.Variants?.FirstOrDefault(v => v.sku == variantResult.Sku);
+                            await _dashboardMetrics.SaveProductAsync(
+                                Guid.NewGuid(), variantResult.Sku,
+                                variantDto != null ? GetProductName(variantDto) : string.Empty,
+                                variantResult.Id, "child", product.sku, variantDto?._pim_varcode, ct);
+                        }
+                    }
+                    await _navCallback.SendCallbackAsync(sku, capturedRequest.BufferId, ToNavCallbackPayload(sku, result, created: false), created: false, ct);
+                }
+                catch (Exception ex)
+                {
+                    var navAck = await _navCallback.SendCallbackAsync(sku, capturedRequest.BufferId,
+                        new { success = false, error = ex.Message }, created: false, ct);
+                    if (!navAck) throw;
+                }
+            }
+            finally { productLock.Release(); }
+        }, navPayload);
+    }
+
+    private void EnqueueFull(string rawProduct, string masterSku, string? bufferId, Dictionary<string, InventoryEntry>? inventories, string? navPayload = null)
+    {
+        var capturedInventories = inventories;
+        var capturedBufferId = bufferId;
+        _jobQueue.Enqueue(masterSku, "full", bufferId, async ct =>
+        {
+            var productLock = ProductLocks.GetOrAdd(masterSku, _ => new SemaphoreSlim(1, 1));
+            await productLock.WaitAsync(ct);
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var actindoClient = scope.ServiceProvider.GetRequiredService<ActindoClient>();
+                try
+                {
+                    var results = await RunFullSyncCoreAsync(rawProduct, capturedInventories, actindoClient, ct);
+                    var masterNode = JsonNode.Parse(rawProduct) as JsonObject;
+                    var masterName = GetNameFromJsonNode(masterNode);
+                    var variantNodes = (masterNode?["variants"] as JsonArray)?.OfType<JsonObject>()
+                        .ToDictionary(v => v["sku"]?.ToString() ?? string.Empty, v => v) ?? [];
+                    var hasVariants = results.Variants.Count > 0;
+                    await _dashboardMetrics.SaveProductAsync(
+                        Guid.NewGuid(), masterSku, masterName,
+                        results.MasterProductId, hasVariants ? "master" : "single", null, null, ct);
+                    foreach (var variant in results.Variants.Where(v => v.Success))
+                    {
+                        variantNodes.TryGetValue(variant.Sku, out var vNode);
+                        await _dashboardMetrics.SaveProductAsync(
+                            Guid.NewGuid(), variant.Sku, GetNameFromJsonNode(vNode),
+                            variant.ProductId, "child", masterSku, vNode?["_pim_varcode"]?.ToString(), ct);
+                    }
+                    await _navCallback.SendCallbackAsync(masterSku, capturedBufferId, results, created: results.MasterOperation == "created", ct);
+                }
+                catch (Exception ex)
+                {
+                    var navAck = await _navCallback.SendCallbackAsync(masterSku, capturedBufferId,
+                        new { success = false, error = ex.Message }, created: false, ct);
+                    if (!navAck) throw;
+                }
+            }
+            finally { productLock.Release(); }
+        }, navPayload);
     }
 
     /// <summary>

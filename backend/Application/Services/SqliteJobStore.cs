@@ -75,6 +75,13 @@ public sealed class SqliteJobStore : ISqliteJobStore
 
         Exec(connection, null,
             "CREATE INDEX IF NOT EXISTS IX_JobLogs_JobId ON JobLogs (JobId)");
+
+        // Migrate: add NavRequestPayload / NavResponsePayload columns if they don't exist yet
+        foreach (var col in new[] { "NavRequestPayload", "NavResponsePayload" })
+        {
+            try { Exec(connection, null, $"ALTER TABLE JobQueue ADD COLUMN {col} TEXT NULL"); }
+            catch { /* column already exists */ }
+        }
     }
 
     public IReadOnlyList<PersistedJob> LoadAll()
@@ -98,7 +105,7 @@ public sealed class SqliteJobStore : ISqliteJobStore
         using var loadCmd = connection.CreateCommand();
         loadCmd.CommandText =
             """
-            SELECT Id, Sku, Operation, BufferId, Status, QueuedAt, StartedAt, CompletedAt, Error
+            SELECT Id, Sku, Operation, BufferId, Status, QueuedAt, StartedAt, CompletedAt, Error, NavRequestPayload, NavResponsePayload
             FROM JobQueue
             WHERE Status = 'failed'
                OR (Status = 'completed' AND CompletedAt > @cutoff)
@@ -118,15 +125,17 @@ public sealed class SqliteJobStore : ISqliteJobStore
 
                 var info = new ProductJobInfo
                 {
-                    Id          = id,
-                    Sku         = reader.GetString(1),
-                    Operation   = reader.GetString(2),
-                    BufferId    = reader.IsDBNull(3) ? null : reader.GetString(3),
-                    QueuedAt    = ParseDate(reader.GetString(5)) ?? DateTimeOffset.UtcNow,
-                    Status      = status,
-                    StartedAt   = reader.IsDBNull(6) ? null : ParseDate(reader.GetString(6)),
-                    CompletedAt = reader.IsDBNull(7) ? null : ParseDate(reader.GetString(7)),
-                    Error       = reader.IsDBNull(8) ? null : reader.GetString(8),
+                    Id                 = id,
+                    Sku                = reader.GetString(1),
+                    Operation          = reader.GetString(2),
+                    BufferId           = reader.IsDBNull(3) ? null : reader.GetString(3),
+                    QueuedAt           = ParseDate(reader.GetString(5)) ?? DateTimeOffset.UtcNow,
+                    Status             = status,
+                    StartedAt          = reader.IsDBNull(6) ? null : ParseDate(reader.GetString(6)),
+                    CompletedAt        = reader.IsDBNull(7) ? null : ParseDate(reader.GetString(7)),
+                    Error              = reader.IsDBNull(8) ? null : reader.GetString(8),
+                    NavRequestPayload  = reader.FieldCount > 9 && !reader.IsDBNull(9) ? reader.GetString(9) : null,
+                    NavResponsePayload = reader.FieldCount > 10 && !reader.IsDBNull(10) ? reader.GetString(10) : null,
                 };
 
                 jobs[id] = (info, new List<ProductJobLogEntry>());
@@ -178,13 +187,15 @@ public sealed class SqliteJobStore : ISqliteJobStore
             connection.Open();
             Exec(connection, null,
                 """
-                INSERT INTO JobQueue (Id, Sku, Operation, BufferId, Status, QueuedAt, StartedAt, CompletedAt, Error)
-                VALUES (@id, @sku, @operation, @bufferId, @status, @queuedAt, @startedAt, @completedAt, @error)
+                INSERT INTO JobQueue (Id, Sku, Operation, BufferId, Status, QueuedAt, StartedAt, CompletedAt, Error, NavRequestPayload, NavResponsePayload)
+                VALUES (@id, @sku, @operation, @bufferId, @status, @queuedAt, @startedAt, @completedAt, @error, @navRequest, @navResponse)
                 ON CONFLICT(Id) DO UPDATE SET
-                    Status      = excluded.Status,
-                    StartedAt   = excluded.StartedAt,
-                    CompletedAt = excluded.CompletedAt,
-                    Error       = excluded.Error
+                    Status             = excluded.Status,
+                    StartedAt          = excluded.StartedAt,
+                    CompletedAt        = excluded.CompletedAt,
+                    Error              = excluded.Error,
+                    NavRequestPayload  = COALESCE(excluded.NavRequestPayload, JobQueue.NavRequestPayload),
+                    NavResponsePayload = COALESCE(excluded.NavResponsePayload, JobQueue.NavResponsePayload)
                 """,
                 ("@id",          job.Id.ToString()),
                 ("@sku",         job.Sku),
@@ -194,7 +205,9 @@ public sealed class SqliteJobStore : ISqliteJobStore
                 ("@queuedAt",    job.QueuedAt.ToString("o", CultureInfo.InvariantCulture)),
                 ("@startedAt",   job.StartedAt.HasValue ? job.StartedAt.Value.ToString("o", CultureInfo.InvariantCulture) : (object)DBNull.Value),
                 ("@completedAt", job.CompletedAt.HasValue ? job.CompletedAt.Value.ToString("o", CultureInfo.InvariantCulture) : (object)DBNull.Value),
-                ("@error",       (object?)job.Error ?? DBNull.Value));
+                ("@error",       (object?)job.Error ?? DBNull.Value),
+                ("@navRequest",  (object?)job.NavRequestPayload ?? DBNull.Value),
+                ("@navResponse", (object?)job.NavResponsePayload ?? DBNull.Value));
         }
         catch (Exception ex)
         {

@@ -15,7 +15,11 @@
 		CircleCheck,
 		CircleX,
 		Play,
-		Trash2
+		Trash2,
+		RotateCcw,
+		AlertTriangle,
+		Search,
+		FileText
 	} from 'lucide-svelte';
 	import type { ProductJobInfo, ProductJobLogEntry } from '$api/types';
 	import { products as productsApi } from '$api/client';
@@ -27,6 +31,15 @@
 	let activeJobs = $state<ProductJobInfo[]>([]);
 	let loading = $state(true);
 	let now = $state(Date.now());
+
+	// Filter state
+	let skuSearch = $state('');
+	let showErrorsOnly = $state(false);
+	let retryingJobId = $state<string | null>(null);
+
+	// NAV payload modal
+	let navPayloadJob = $state<ProductJobInfo | null>(null);
+	let navPayloadModalOpen = $state(false);
 
 	// Log console state
 	let expandedJobId = $state<string | null>(null);
@@ -69,6 +82,26 @@
 			replayError = err instanceof Error ? err.message : 'Unbekannter Fehler';
 		} finally {
 			replayLoading = false;
+		}
+	}
+
+	function openNavPayloadModal(job: ProductJobInfo, e: MouseEvent) {
+		e.stopPropagation();
+		navPayloadJob = job;
+		navPayloadModalOpen = true;
+	}
+
+	async function retryJob(job: ProductJobInfo, e: MouseEvent) {
+		e.stopPropagation();
+		if (retryingJobId === job.id) return;
+		retryingJobId = job.id;
+		try {
+			await productsApi.retryJob(job.id);
+			await load();
+		} catch {
+			// ignore
+		} finally {
+			retryingJobId = null;
 		}
 	}
 
@@ -143,6 +176,15 @@
 	let queuedCount = $derived(activeJobs.filter((j) => j.status === 'queued').length);
 	let completedCount = $derived(activeJobs.filter((j) => j.status === 'completed').length);
 	let failedCount = $derived(activeJobs.filter((j) => j.status === 'failed').length);
+
+	let filteredJobs = $derived(
+		activeJobs.filter((j) => {
+			if (showErrorsOnly && j.status !== 'failed' && !jobsWithErrors.has(j.id)) return false;
+			if (skuSearch.trim() && !j.sku.toLowerCase().includes(skuSearch.trim().toLowerCase()))
+				return false;
+			return true;
+		})
+	);
 
 	async function load() {
 		try {
@@ -311,6 +353,33 @@
 
 <!-- Jobs Table -->
 <Card>
+	<!-- Filter controls -->
+	<div class="flex flex-wrap items-center gap-3 mb-5">
+		<div class="relative flex-1 min-w-[200px] max-w-xs">
+			<Search size={14} class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+			<input
+				type="search"
+				placeholder="SKU suchen..."
+				bind:value={skuSearch}
+				class="w-full bg-white/5 border border-white/10 rounded-lg pl-8 pr-3 py-1.5 text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:border-royal-500/50"
+			/>
+		</div>
+		<button
+			type="button"
+			onclick={() => (showErrorsOnly = !showErrorsOnly)}
+			class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
+				{showErrorsOnly
+				? 'bg-red-900/40 border border-red-500/40 text-red-300'
+				: 'bg-white/5 border border-white/10 text-gray-400 hover:text-gray-200'}"
+		>
+			<AlertTriangle size={13} />
+			Nur Fehler
+		</button>
+		{#if skuSearch || showErrorsOnly}
+			<span class="text-xs text-gray-500">{filteredJobs.length} / {activeJobs.length}</span>
+		{/if}
+	</div>
+
 	{#if loading && activeJobs.length === 0}
 		<div class="flex justify-center py-16">
 			<Loader2 size={32} class="animate-spin text-royal-400" />
@@ -326,7 +395,9 @@
 			<table class="w-full text-sm">
 				<thead>
 					<tr class="border-b border-white/10 text-left">
-						<th class="pb-3 pr-2 w-6"></th>
+						<th class="pb-3 pr-1 w-6"></th>
+						<th class="pb-3 pr-1 w-6"></th>
+						<th class="pb-3 pr-1 w-6"></th>
 						<th class="pb-3 pr-2 w-6"></th>
 						<th class="pb-3 pr-4 font-medium text-gray-400 whitespace-nowrap">Status</th>
 						<th class="pb-3 pr-4 font-medium text-gray-400 whitespace-nowrap">Zeitstempel</th>
@@ -338,7 +409,7 @@
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-white/5">
-					{#each activeJobs as job (job.id)}
+					{#each filteredJobs as job (job.id)}
 						<!-- Job row -->
 						<tr
 							class="cursor-pointer transition-colors hover:bg-white/5
@@ -357,6 +428,43 @@
 								>
 									<Trash2 size={13} />
 								</button>
+							</td>
+
+							<!-- Retry button -->
+							<td class="py-3 pr-1 w-6">
+								{#if job.operation === 'create' || job.operation === 'save' || job.operation === 'full'}
+									<button
+										type="button"
+										class="text-gray-600 hover:text-green-400 transition-colors p-0.5 rounded disabled:opacity-30"
+										onclick={(e) => retryJob(job, e)}
+										disabled={retryingJobId === job.id || job.status === 'running' || job.status === 'queued'}
+										title="Job wiederholen"
+									>
+										{#if retryingJobId === job.id}
+											<Loader2 size={13} class="animate-spin" />
+										{:else}
+											<RotateCcw size={13} />
+										{/if}
+									</button>
+								{:else}
+									<span class="w-4 inline-block"></span>
+								{/if}
+							</td>
+
+							<!-- NAV payload button -->
+							<td class="py-3 pr-2 w-6">
+								{#if job.navRequestPayload}
+									<button
+										type="button"
+										class="text-gray-600 hover:text-royal-400 transition-colors p-0.5 rounded"
+										onclick={(e) => openNavPayloadModal(job, e)}
+										title="NAV Request/Response anzeigen"
+									>
+										<FileText size={13} />
+									</button>
+								{:else}
+									<span class="w-4 inline-block"></span>
+								{/if}
 							</td>
 
 							<!-- Expand indicator -->
@@ -437,7 +545,7 @@
 						<!-- Log console row -->
 						{#if expandedJobId === job.id}
 							<tr>
-								<td colspan="9" class="pb-3 pt-0">
+								<td colspan="11" class="pb-3 pt-0">
 									<div transition:slide={{ duration: 220, easing: cubicOut }}>
 										<div class="mx-1 rounded-lg border border-white/10 bg-gray-950/80 overflow-hidden">
 											<!-- Console header -->
@@ -662,6 +770,38 @@
 					{:else}
 						<pre class="text-xs font-mono bg-black/40 border border-white/10 rounded-lg p-3 overflow-auto h-[60vh] {replaySuccess === false ? 'text-red-300' : replaySuccess === true ? 'text-green-200' : selectedLogEntry.success ? 'text-gray-300' : 'text-red-300'} whitespace-pre">{replaySuccess !== null ? (replayResponsePayload ?? '—') : formatJson(selectedLogEntry.responsePayload)}</pre>
 					{/if}
+				</div>
+			</div>
+		</div>
+	</Modal>
+{/if}
+
+<!-- NAV Payload Modal -->
+{#if navPayloadJob}
+	<Modal
+		bind:open={navPayloadModalOpen}
+		title="NAV Request — {navPayloadJob.sku}"
+		class="max-w-7xl"
+		onclose={() => (navPayloadJob = null)}
+	>
+		<div class="space-y-4">
+			<div class="flex items-center gap-3 text-xs text-gray-500 -mt-2">
+				<span class="font-mono">{operationLabel(navPayloadJob.operation)}</span>
+				<span>·</span>
+				<span class="font-mono">{new Date(navPayloadJob.queuedAt).toLocaleString('de-DE')}</span>
+			</div>
+			<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+				<div>
+					<div class="flex items-center gap-2 mb-2">
+						<span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">NAV → Middleware Request</span>
+					</div>
+					<pre class="text-xs font-mono bg-black/40 border border-white/10 rounded-lg p-3 overflow-auto h-[60vh] text-gray-300 whitespace-pre">{formatJson(navPayloadJob.navRequestPayload)}</pre>
+				</div>
+				<div>
+					<div class="flex items-center gap-2 mb-2">
+						<span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Middleware → NAV Response</span>
+					</div>
+					<pre class="text-xs font-mono bg-black/40 border border-white/10 rounded-lg p-3 overflow-auto h-[60vh] text-gray-300 whitespace-pre">{navPayloadJob.navResponsePayload ? formatJson(navPayloadJob.navResponsePayload) : '—'}</pre>
 				</div>
 			</div>
 		</div>

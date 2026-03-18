@@ -37,6 +37,8 @@ public sealed class ProductJobInfo
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
     public string? Error { get; set; }
+    public string? NavRequestPayload { get; set; }
+    public string? NavResponsePayload { get; set; }
 
     private readonly List<ProductJobLogEntry> _logs = new();
     private readonly object _logsLock = new();
@@ -130,15 +132,16 @@ public sealed class ProductJobQueue
     /// Registriert einen synchronen Job direkt als laufend (kein async-Queue).
     /// Setzt den Job-Kontext für API-Logging. Der Aufrufer muss danach <see cref="CompleteSyncJob"/> aufrufen.
     /// </summary>
-    public void RegisterSyncJob(Guid id, string sku, string operation)
+    public void RegisterSyncJob(Guid id, string sku, string operation, string? navRequestPayload = null)
     {
         var info = new ProductJobInfo
         {
-            Id        = id,
-            Sku       = sku,
-            Operation = operation,
-            Status    = ProductSyncJobStatus.Running,
-            StartedAt = DateTimeOffset.UtcNow
+            Id                = id,
+            Sku               = sku,
+            Operation         = operation,
+            Status            = ProductSyncJobStatus.Running,
+            StartedAt         = DateTimeOffset.UtcNow,
+            NavRequestPayload = navRequestPayload
         };
         _jobs[info.Id] = info;
         _currentJobId.Value = info.Id;
@@ -147,6 +150,9 @@ public sealed class ProductJobQueue
             "Sync job registered: {JobId} SKU={Sku} Operation={Operation}",
             info.Id, sku, operation);
     }
+
+    /// <summary>Gibt den Job mit der angegebenen ID zurück, oder null wenn nicht vorhanden.</summary>
+    public ProductJobInfo? Get(Guid jobId) => _jobs.TryGetValue(jobId, out var job) ? job : null;
 
     /// <summary>Markiert einen synchronen Job als abgeschlossen oder fehlgeschlagen.</summary>
     public void CompleteSyncJob(Guid jobId, bool success, string? error = null)
@@ -173,13 +179,14 @@ public sealed class ProductJobQueue
                     });
     }
 
-    public Guid Enqueue(string sku, string operation, string? bufferId, Func<CancellationToken, Task> work)
+    public Guid Enqueue(string sku, string operation, string? bufferId, Func<CancellationToken, Task> work, string? navRequestPayload = null)
     {
         var info = new ProductJobInfo
         {
-            Sku       = sku,
-            Operation = operation,
-            BufferId  = bufferId
+            Sku               = sku,
+            Operation         = operation,
+            BufferId          = bufferId,
+            NavRequestPayload = navRequestPayload
         };
 
         _jobs[info.Id] = info;

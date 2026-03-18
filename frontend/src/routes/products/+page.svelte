@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { RefreshCw, Search, Package, ChevronDown, ChevronRight, X, Warehouse } from 'lucide-svelte';
-	import { products as productsApi } from '$api/client';
+	import { RefreshCw, Search, Package, ChevronDown, ChevronRight, X, Warehouse, ExternalLink } from 'lucide-svelte';
+	import { products as productsApi, settings as settingsApi } from '$api/client';
 	import type { ProductListItem, ProductStockItem } from '$api/types';
 	import { formatDate } from '$utils/format';
 	import PageHeader from '$components/layout/PageHeader.svelte';
@@ -21,6 +21,7 @@
 	let loading = $state(true);
 	let error = $state('');
 	let search = $state('');
+	let actindoBaseUrl = $state<string | null>(null);
 
 	// Expanded master products (SKU -> variants)
 	let expandedProducts: Record<string, ProductListItem[]> = $state({});
@@ -64,8 +65,26 @@
 			: products
 	);
 
+	function actindoProductUrl(productId: number | null): string | null {
+		if (!actindoBaseUrl || !productId) return null;
+		return `${actindoBaseUrl}/Actindo.CoreModules.Start.Start.start#/Actindo.Modules.Actindo.PIM.Views.start/products/list/${productId}`;
+	}
+
+	function syncStatusLabel(product: ProductListItem): string {
+		const dates = [product.lastPriceUpdatedAt, product.lastStockUpdatedAt].filter(Boolean);
+		if (dates.length === 0) return '';
+		const latest = dates.reduce((a, b) => (a! > b! ? a : b))!;
+		const diff = Date.now() - new Date(latest).getTime();
+		const hours = Math.floor(diff / 3600000);
+		if (hours < 1) return 'Vor < 1h';
+		if (hours < 24) return `Vor ${hours}h`;
+		const days = Math.floor(hours / 24);
+		return `Vor ${days}T`;
+	}
+
 	onMount(() => {
 		loadProducts();
+		settingsApi.getActindoBaseUrl().then((r) => (actindoBaseUrl = r.actindoBaseUrl)).catch(() => {});
 	});
 
 	async function loadProducts() {
@@ -196,6 +215,11 @@
 						<th
 							class="text-left py-3 px-4 text-xs uppercase tracking-wider text-gray-400 font-medium"
 						>
+							Sync
+						</th>
+						<th
+							class="text-left py-3 px-4 text-xs uppercase tracking-wider text-gray-400 font-medium"
+						>
 							Erstellt
 						</th>
 					</tr>
@@ -257,7 +281,22 @@
 							<!-- Actindo ID -->
 							<td class="py-3 px-4">
 								{#if product.productId}
-									<span class="font-mono text-sm">{product.productId}</span>
+									{@const url = actindoProductUrl(product.productId)}
+									<div class="flex items-center gap-1.5">
+										<span class="font-mono text-sm">{product.productId}</span>
+										{#if url}
+											<a
+												href={url}
+												target="_blank"
+												rel="noopener noreferrer"
+												onclick={(e) => e.stopPropagation()}
+												class="text-gray-600 hover:text-royal-400 transition-colors"
+												title="In Actindo öffnen"
+											>
+												<ExternalLink size={12} />
+											</a>
+										{/if}
+									</div>
 								{:else}
 									<span class="text-gray-500">-</span>
 								{/if}
@@ -293,6 +332,16 @@
 								{/if}
 							</td>
 
+							<!-- Sync Status -->
+							<td class="py-3 px-4 text-sm text-gray-500">
+								{@const syncLabel = syncStatusLabel(product)}
+								{#if syncLabel}
+									<span class="text-xs text-gray-500" title="Zuletzt synchronisiert">{syncLabel}</span>
+								{:else}
+									<span class="text-gray-600">—</span>
+								{/if}
+							</td>
+
 							<!-- Erstellt -->
 							<td class="py-3 px-4 text-sm text-gray-400">
 								{formatDate(product.createdAt)}
@@ -324,7 +373,22 @@
 									</td>
 									<td class="py-2 px-4">
 										{#if variant.productId}
-											<span class="font-mono text-sm">{variant.productId}</span>
+											{@const varUrl = actindoProductUrl(variant.productId)}
+											<div class="flex items-center gap-1.5">
+												<span class="font-mono text-sm">{variant.productId}</span>
+												{#if varUrl}
+													<a
+														href={varUrl}
+														target="_blank"
+														rel="noopener noreferrer"
+														onclick={(e) => e.stopPropagation()}
+														class="text-gray-600 hover:text-royal-400 transition-colors"
+														title="In Actindo öffnen"
+													>
+														<ExternalLink size={12} />
+													</a>
+												{/if}
+											</div>
 										{:else}
 											<span class="text-gray-500">-</span>
 										{/if}
@@ -349,6 +413,8 @@
 											<span class="text-gray-500">-</span>
 										{/if}
 									</td>
+									<!-- Sync Status (empty for variants) -->
+									<td class="py-2 px-4"></td>
 									<td class="py-2 px-4 text-sm text-gray-400">
 										{formatDate(variant.createdAt)}
 									</td>

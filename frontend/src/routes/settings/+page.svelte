@@ -31,6 +31,7 @@
 	let endpoints: Record<string, string> = $state({});
 	let navApiUrl = $state('');
 	let navApiToken = $state('');
+	let actindoBaseUrl = $state('');
 	let warehouseMappings: Record<string, number> = $state({});
 	let newWarehouseName = $state('');
 	let newWarehouseIdInput = $state('');
@@ -57,7 +58,8 @@
 			endpoints = { ...data.endpoints };
 			navApiUrl = data.navApiUrl ?? '';
 			navApiToken = data.navApiToken ?? '';
-		warehouseMappings = { ...data.warehouseMappings };
+			actindoBaseUrl = data.actindoBaseUrl ?? '';
+			warehouseMappings = { ...data.warehouseMappings };
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Fehler beim Laden';
 		} finally {
@@ -81,6 +83,7 @@
 				endpoints,
 				navApiUrl: navApiUrl || null,
 				navApiToken: navApiToken || null,
+				actindoBaseUrl: actindoBaseUrl || null,
 				warehouseMappings
 			});
 			success = 'Einstellungen gespeichert';
@@ -242,6 +245,23 @@
 						placeholder="Refresh Token..."
 					/>
 				</div>
+			</div>
+		</Card>
+
+		<!-- Actindo Base URL -->
+		<Card>
+			<h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+				<Link size={20} />
+				Actindo Base URL
+			</h3>
+			<div>
+				<label class="label" for="actindo-base-url">Actindo Frontend URL</label>
+				<Input
+					id="actindo-base-url"
+					bind:value={actindoBaseUrl}
+					placeholder="https://schalke-dev.dev.actindo.com"
+				/>
+				<p class="text-xs text-gray-500 mt-1">Wird für direkte Links zu Produkten in Actindo verwendet.</p>
 			</div>
 		</Card>
 

@@ -19,5 +19,8 @@ public sealed class ActindoSettingsDto
 
     // Warehouse name → Actindo ID mappings
     public Dictionary<string, int> WarehouseMappings { get; init; } = new();
+
+    // Base URL for Actindo frontend links
+    public string? ActindoBaseUrl { get; init; }
 }
 

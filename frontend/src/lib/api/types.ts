@@ -20,6 +20,8 @@ export interface ProductJobInfo {
 	startedAt: string | null;
 	completedAt: string | null;
 	error: string | null;
+	navRequestPayload: string | null;
+	navResponsePayload: string | null;
 }
 
 // Auth Types
@@ -159,6 +161,7 @@ export interface ActindoSettings {
 	navApiUrl: string | null;
 	navApiToken: string | null;
 	warehouseMappings: Record<string, number>;
+	actindoBaseUrl: string | null;
 }
 
 // Sync Types
