@@ -478,7 +478,7 @@
 															<!-- svelte-ignore a11y_click_events_have_key_events a11y_interactive_supports_focus -->
 															<div
 																class="grid gap-x-3 items-center group cursor-pointer rounded-md px-2 py-1.5 -mx-2 hover:bg-white/5 transition-colors"
-																style="grid-template-columns: 14px 52px 88px 1fr 180px 96px auto"
+																style="grid-template-columns: 14px 52px 88px minmax(120px, 260px) 180px 96px auto"
 																onclick={(e) => openPayloadModal(entry, e)}
 																title="Klicken für Request/Response Payload"
 																role="button"
