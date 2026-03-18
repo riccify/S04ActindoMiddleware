@@ -478,7 +478,7 @@
 															<!-- svelte-ignore a11y_click_events_have_key_events a11y_interactive_supports_focus -->
 															<div
 																class="grid gap-x-3 items-center group cursor-pointer rounded-md px-2 py-1.5 -mx-2 hover:bg-white/5 transition-colors"
-																style="grid-template-columns: 14px 52px 88px 220px 1fr auto"
+																style="grid-template-columns: 14px 52px 88px 1fr 180px 96px auto"
 																onclick={(e) => openPayloadModal(entry, e)}
 																title="Klicken für Request/Response Payload"
 																role="button"
@@ -519,36 +519,41 @@
 																	{/if}
 																</div>
 
-																<!-- Endpoint -->
-																<span class="font-mono text-[11px] {entry.success ? 'text-gray-400' : 'text-red-400'} truncate">
+																<!-- Endpoint (flex, takes all available space) -->
+																<span class="font-mono text-[11px] {entry.success ? 'text-gray-400' : 'text-red-400'} truncate min-w-0">
 																	{shortEndpoint(entry.endpoint)}
 																</span>
 
-																<!-- Details: SKU + ID or relation IDs -->
-																<div class="flex items-center gap-2 min-w-0">
+																<!-- SKU / primary detail (fixed 180px) -->
+																<div class="min-w-0 overflow-hidden">
 																	{#if meta.type === 'master' || meta.type === 'variant'}
-																		<span class="font-mono text-[11px] {entry.success ? 'text-white/80' : 'text-red-300/70'} truncate">
+																		<span class="font-mono text-[11px] {entry.success ? 'text-white/80' : 'text-red-300/70'} truncate block">
 																			{meta.sku}
 																		</span>
-																		{#if meta.actindoId}
-																			<span class="shrink-0 text-[10px] tabular-nums px-1.5 py-0.5 rounded bg-white/5 text-royal-400/80 font-mono border border-white/5 whitespace-nowrap">
-																				ID {meta.actindoId}
-																			</span>
-																		{/if}
 																	{:else if meta.type === 'relation'}
-																		<span class="text-[11px] text-gray-400 font-mono">
+																		<span class="text-[11px] text-gray-400 font-mono truncate block">
 																			#{meta.variantId} <span class="text-gray-600">→</span> #{meta.parentId}
 																		</span>
 																	{:else if meta.type === 'inventory'}
-																		<span class="font-mono text-[11px] text-white/80 truncate">{meta.sku}</span>
-																		{#if meta.warehouseId}
-																			<span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-gray-500 font-mono border border-white/5 whitespace-nowrap">
-																				Lager {meta.warehouseId}
-																			</span>
-																		{/if}
+																		<span class="font-mono text-[11px] text-white/80 truncate block">{meta.sku}</span>
 																	{/if}
-																	{#if entry.error}
-																		<span class="text-red-400/80 text-[11px] truncate" title={entry.error}>→ {entry.error}</span>
+																	{#if entry.error && (meta.type === 'unknown')}
+																		<span class="text-red-400/80 text-[11px] truncate block" title={entry.error}>{entry.error}</span>
+																	{/if}
+																</div>
+
+																<!-- ID / secondary detail (fixed 96px, always aligned) -->
+																<div>
+																	{#if (meta.type === 'master' || meta.type === 'variant') && meta.actindoId}
+																		<span class="text-[10px] tabular-nums px-1.5 py-0.5 rounded bg-white/5 text-royal-400/80 font-mono border border-white/5 whitespace-nowrap">
+																			ID {meta.actindoId}
+																		</span>
+																	{:else if meta.type === 'inventory' && meta.warehouseId}
+																		<span class="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-gray-500 font-mono border border-white/5 whitespace-nowrap">
+																			Lager {meta.warehouseId}
+																		</span>
+																	{:else if entry.error && meta.type !== 'unknown'}
+																		<span class="text-red-400/70 text-[10px] truncate block" title={entry.error}>↳ {entry.error}</span>
 																	{/if}
 																</div>
 
