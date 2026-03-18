@@ -66,10 +66,9 @@
 			: products
 	);
 
-	function actindoProductUrl(productId: number | null): string | null {
-		if (!productId) return null;
+	function actindoProductUrl(sku: string): string {
 		const base = actindoBaseUrl.replace(/\/$/, '');
-		return `${base}/Actindo.CoreModules.Start.Start.start#/Actindo.Modules.Actindo.PIM.Views.start/products/list/${productId}`;
+		return `${base}/Actindo.CoreModules.Start.Start.start#/Actindo.Modules.Actindo.PIM.Views.start/products/list/${sku}`;
 	}
 
 	function syncStatusLabel(product: ProductListItem): string {
@@ -258,13 +257,25 @@
 
 							<!-- SKU -->
 							<td class="py-3 px-4">
-								<span
-									class="font-mono text-sm {isMaster
-										? 'text-royal-300 font-semibold'
-										: 'text-royal-300'}"
-								>
-									{product.sku}
-								</span>
+								<div class="flex items-center gap-1.5">
+									<span
+										class="font-mono text-sm {isMaster
+											? 'text-royal-300 font-semibold'
+											: 'text-royal-300'}"
+									>
+										{product.sku}
+									</span>
+									<a
+										href={actindoProductUrl(product.sku)}
+										target="_blank"
+										rel="noopener noreferrer"
+										onclick={(e) => e.stopPropagation()}
+										class="text-gray-600 hover:text-royal-400 transition-colors"
+										title="In Actindo öffnen"
+									>
+										<ExternalLink size={12} />
+									</a>
+								</div>
 							</td>
 
 							<!-- Name -->
@@ -285,22 +296,7 @@
 							<!-- Actindo ID -->
 							<td class="py-3 px-4">
 								{#if product.productId}
-									{@const url = actindoProductUrl(product.productId)}
-									<div class="flex items-center gap-1.5">
-										<span class="font-mono text-sm">{product.productId}</span>
-										{#if url}
-											<a
-												href={url}
-												target="_blank"
-												rel="noopener noreferrer"
-												onclick={(e) => e.stopPropagation()}
-												class="text-gray-600 hover:text-royal-400 transition-colors"
-												title="In Actindo öffnen"
-											>
-												<ExternalLink size={12} />
-											</a>
-										{/if}
-									</div>
+									<span class="font-mono text-sm">{product.productId}</span>
 								{:else}
 									<span class="text-gray-500">-</span>
 								{/if}
@@ -357,10 +353,22 @@
 								<tr class="border-b border-white/5 bg-royal-900/20">
 									<td class="py-2 px-4"></td>
 									<td class="py-2 px-4">
-										<span class="font-mono text-sm text-gray-400 pl-4 whitespace-nowrap">
-											<span class="text-royal-600 mr-1">└</span>
-											{variant.sku}
-										</span>
+										<div class="flex items-center gap-1.5">
+											<span class="font-mono text-sm text-gray-400 pl-4 whitespace-nowrap">
+												<span class="text-royal-600 mr-1">└</span>
+												{variant.sku}
+											</span>
+											<a
+												href={actindoProductUrl(variant.sku)}
+												target="_blank"
+												rel="noopener noreferrer"
+												onclick={(e) => e.stopPropagation()}
+												class="text-gray-600 hover:text-royal-400 transition-colors"
+												title="In Actindo öffnen"
+											>
+												<ExternalLink size={12} />
+											</a>
+										</div>
 									</td>
 									<td class="py-2 px-4">
 										{#if variant.variantCode}
@@ -376,22 +384,7 @@
 									</td>
 									<td class="py-2 px-4">
 										{#if variant.productId}
-											{@const varUrl = actindoProductUrl(variant.productId)}
-											<div class="flex items-center gap-1.5">
-												<span class="font-mono text-sm">{variant.productId}</span>
-												{#if varUrl}
-													<a
-														href={varUrl}
-														target="_blank"
-														rel="noopener noreferrer"
-														onclick={(e) => e.stopPropagation()}
-														class="text-gray-600 hover:text-royal-400 transition-colors"
-														title="In Actindo öffnen"
-													>
-														<ExternalLink size={12} />
-													</a>
-												{/if}
-											</div>
+											<span class="font-mono text-sm">{variant.productId}</span>
 										{:else}
 											<span class="text-gray-500">-</span>
 										{/if}
