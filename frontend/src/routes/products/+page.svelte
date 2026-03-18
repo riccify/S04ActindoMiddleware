@@ -334,9 +334,8 @@
 
 							<!-- Sync Status -->
 							<td class="py-3 px-4 text-sm text-gray-500">
-								{@const syncLabel = syncStatusLabel(product)}
-								{#if syncLabel}
-									<span class="text-xs text-gray-500" title="Zuletzt synchronisiert">{syncLabel}</span>
+								{#if syncStatusLabel(product)}
+									<span class="text-xs text-gray-500" title="Zuletzt synchronisiert">{syncStatusLabel(product)}</span>
 								{:else}
 									<span class="text-gray-600">—</span>
 								{/if}
