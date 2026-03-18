@@ -474,7 +474,7 @@
 												{:else}
 													<div class="space-y-0.5">
 														<!-- Header row -->
-														<div class="grid gap-x-3 px-2 pb-1 mb-1 border-b border-white/5"
+														<div class="grid px-2 pb-1 mb-1 -mx-2 border-b border-white/5"
 															style="grid-template-columns: 14px 52px 88px minmax(205px, 365px) 180px 80px auto; column-gap: 20px">
 															<div></div>
 															<span class="text-[10px] font-medium text-gray-600 uppercase tracking-wide">Zeit</span>
