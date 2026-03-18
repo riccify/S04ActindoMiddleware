@@ -87,7 +87,7 @@ public sealed class ProductJobQueue
                 {
                     var remaining = record.Job.CompletedAt.Value.AddDays(5) - DateTimeOffset.UtcNow;
                     if (remaining > TimeSpan.Zero)
-                        _ = Task.Delay(remaining).ContinueWith(_ =>
+                        _ = Task.Delay(remaining).ContinueWith(t =>
                         {
                             _store.Delete(record.Job.Id);
                             _jobs.TryRemove(record.Job.Id, out _);
@@ -166,7 +166,7 @@ public sealed class ProductJobQueue
 
         if (success)
             _ = Task.Delay(TimeSpan.FromDays(5))
-                    .ContinueWith(_ =>
+                    .ContinueWith(t =>
                     {
                         _store.Delete(jobId);
                         _jobs.TryRemove(jobId, out _);
@@ -236,7 +236,7 @@ public sealed class ProductJobQueue
             // Successful jobs: keep 5 days; failed jobs: keep indefinitely
             if (info.Status == ProductSyncJobStatus.Completed)
                 _ = Task.Delay(TimeSpan.FromDays(5))
-                        .ContinueWith(_ =>
+                        .ContinueWith(t =>
                         {
                             _store.Delete(info.Id);
                             _jobs.TryRemove(info.Id, out _);
