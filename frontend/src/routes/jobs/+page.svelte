@@ -475,7 +475,7 @@
 													<div class="space-y-0.5">
 														<!-- Header row -->
 														<div class="grid gap-x-3 px-2 pb-1 mb-1 border-b border-white/5"
-															style="grid-template-columns: 14px 52px 88px minmax(140px, 300px) 180px 80px auto; column-gap: 16px">
+															style="grid-template-columns: 14px 52px 88px minmax(150px, 310px) 180px 80px auto; column-gap: 20px">
 															<div></div>
 															<span class="text-[10px] font-medium text-gray-600 uppercase tracking-wide">Zeit</span>
 															<span class="text-[10px] font-medium text-gray-600 uppercase tracking-wide">Typ</span>
@@ -490,7 +490,7 @@
 															<!-- svelte-ignore a11y_click_events_have_key_events a11y_interactive_supports_focus -->
 															<div
 																class="grid gap-x-3 items-center group cursor-pointer rounded-md px-2 py-1.5 -mx-2 hover:bg-white/5 transition-colors"
-																style="grid-template-columns: 14px 52px 88px minmax(140px, 300px) 180px 80px auto; column-gap: 16px"
+																style="grid-template-columns: 14px 52px 88px minmax(150px, 310px) 180px 80px auto; column-gap: 20px"
 																onclick={(e) => openPayloadModal(entry, e)}
 																title="Klicken für Request/Response Payload"
 																role="button"
