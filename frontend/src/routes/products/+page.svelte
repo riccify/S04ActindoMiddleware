@@ -21,7 +21,8 @@
 	let loading = $state(true);
 	let error = $state('');
 	let search = $state('');
-	let actindoBaseUrl = $state<string | null>(null);
+	const DEFAULT_ACTINDO_BASE_URL = 'https://schalke-dev.dev.actindo.com';
+	let actindoBaseUrl = $state(DEFAULT_ACTINDO_BASE_URL);
 
 	// Expanded master products (SKU -> variants)
 	let expandedProducts: Record<string, ProductListItem[]> = $state({});
@@ -66,8 +67,9 @@
 	);
 
 	function actindoProductUrl(productId: number | null): string | null {
-		if (!actindoBaseUrl || !productId) return null;
-		return `${actindoBaseUrl}/Actindo.CoreModules.Start.Start.start#/Actindo.Modules.Actindo.PIM.Views.start/products/list/${productId}`;
+		if (!productId) return null;
+		const base = actindoBaseUrl.replace(/\/$/, '');
+		return `${base}/Actindo.CoreModules.Start.Start.start#/Actindo.Modules.Actindo.PIM.Views.start/products/list/${productId}`;
 	}
 
 	function syncStatusLabel(product: ProductListItem): string {
@@ -84,7 +86,9 @@
 
 	onMount(() => {
 		loadProducts();
-		settingsApi.getActindoBaseUrl().then((r) => (actindoBaseUrl = r.actindoBaseUrl)).catch(() => {});
+		settingsApi.getActindoBaseUrl()
+			.then((r) => { if (r.actindoBaseUrl) actindoBaseUrl = r.actindoBaseUrl; })
+			.catch(() => {});
 	});
 
 	async function loadProducts() {

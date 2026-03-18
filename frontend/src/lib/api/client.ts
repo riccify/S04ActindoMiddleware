@@ -206,7 +206,7 @@ export const settings = {
 	get: () => request<ActindoSettings>('/api/settings/actindo'),
 
 	getActindoBaseUrl: () =>
-		request<{ actindoBaseUrl: string | null }>('/api/settings/actindo-base-url'),
+		request<{ actindoBaseUrl: string | null }>('/api/products/actindo-base-url'),
 
 	update: (data: ActindoSettings) =>
 		request<void>('/api/settings/actindo', {

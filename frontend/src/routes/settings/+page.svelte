@@ -58,7 +58,7 @@
 			endpoints = { ...data.endpoints };
 			navApiUrl = data.navApiUrl ?? '';
 			navApiToken = data.navApiToken ?? '';
-			actindoBaseUrl = data.actindoBaseUrl ?? '';
+			actindoBaseUrl = data.actindoBaseUrl ?? 'https://schalke-dev.dev.actindo.com';
 			warehouseMappings = { ...data.warehouseMappings };
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Fehler beim Laden';
@@ -83,7 +83,7 @@
 				endpoints,
 				navApiUrl: navApiUrl || null,
 				navApiToken: navApiToken || null,
-				actindoBaseUrl: actindoBaseUrl || null,
+				actindoBaseUrl: actindoBaseUrl || 'https://schalke-dev.dev.actindo.com',
 				warehouseMappings
 			});
 			success = 'Einstellungen gespeichert';

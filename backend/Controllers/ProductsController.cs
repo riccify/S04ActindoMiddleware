@@ -9,6 +9,7 @@ using System.Threading;
 using ActindoMiddleware.Application.Configuration;
 using ActindoMiddleware.DTOs.Requests;
 using System.Linq;
+using Microsoft.Extensions.Logging;
 
 namespace ActindoMiddleware.Controllers;
 
@@ -21,17 +22,20 @@ public sealed class ProductsController : ControllerBase
     private readonly ActindoProductListService _productListService;
     private readonly ActindoClient _actindoClient;
     private readonly IActindoEndpointProvider _endpointProvider;
+    private readonly ISettingsStore _settingsStore;
 
     public ProductsController(
         IDashboardMetricsService metricsService,
         ActindoProductListService productListService,
         ActindoClient actindoClient,
-        IActindoEndpointProvider endpointProvider)
+        IActindoEndpointProvider endpointProvider,
+        ISettingsStore settingsStore)
     {
         _metricsService = metricsService;
         _productListService = productListService;
         _actindoClient = actindoClient;
         _endpointProvider = endpointProvider;
+        _settingsStore = settingsStore;
     }
 
     [HttpGet]
@@ -88,6 +92,13 @@ public sealed class ProductsController : ControllerBase
             Stock = s.Stock,
             UpdatedAt = s.UpdatedAt
         }));
+    }
+
+    [HttpGet("actindo-base-url")]
+    public async Task<IActionResult> GetActindoBaseUrl(CancellationToken cancellationToken)
+    {
+        var settings = await _settingsStore.GetActindoSettingsAsync(cancellationToken);
+        return Ok(new { actindoBaseUrl = settings.ActindoBaseUrl });
     }
 
     private static ProductListItemDto MapToDto(ProductListItem p) => new()

@@ -483,7 +483,7 @@
 									{:else if job.status === 'queued'}
 										<Clock size={15} class="text-gray-400 shrink-0" />
 										<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-700 text-gray-300">Wartet</span>
-									{:else if job.status === 'completed'}
+\t\t\t\t\t\t\t\t\t{:else if job.status === 'completed' && !jobsWithErrors.has(job.id)}
 										<CheckCircle2 size={15} class="text-green-400 shrink-0" />
 										<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-green-900/40 text-green-300">Fertig</span>
 									{:else}
