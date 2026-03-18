@@ -1,0 +1,128 @@
+vars: {
+  d2-config: {
+    layout-engine: dagre
+  }
+}
+
+# ─────────────────────────────────────────
+#  Datenmodell – Actindo Middleware SQLite
+# ─────────────────────────────────────────
+
+# ── Auth ──────────────────────────────────
+
+Users: {
+  shape: sql_table
+  Id: TEXT PK
+  Username: TEXT UNIQUE NOT NULL
+  Role: TEXT NOT NULL
+  PasswordSalt: BLOB NOT NULL
+  PasswordHash: BLOB NOT NULL
+  PasswordIterations: INTEGER NOT NULL
+  CreatedAt: TEXT NOT NULL
+}
+
+Registrations: {
+  shape: sql_table
+  Id: TEXT PK
+  Username: TEXT UNIQUE NOT NULL
+  PasswordSalt: BLOB NOT NULL
+  PasswordHash: BLOB NOT NULL
+  PasswordIterations: INTEGER NOT NULL
+  CreatedAt: TEXT NOT NULL
+}
+
+# ── Konfiguration ──────────────────────────
+
+Settings: {
+  shape: sql_table
+  Key: TEXT PK
+  Value: TEXT NOT NULL
+}
+
+# ── Jobs ──────────────────────────────────
+
+JobQueue: {
+  shape: sql_table
+  Id: TEXT PK
+  Sku: TEXT NOT NULL
+  Operation: "TEXT NOT NULL  (create|save|full|inventory|price)"
+  BufferId: TEXT NULL
+  Status: "TEXT NOT NULL  (queued|running|completed|failed)"
+  QueuedAt: TEXT NOT NULL
+  StartedAt: TEXT NULL
+  CompletedAt: TEXT NULL
+  Error: TEXT NULL
+  NavRequestPayload: TEXT NULL
+  NavResponsePayload: TEXT NULL
+}
+
+JobLogs: {
+  shape: sql_table
+  RowId: INTEGER PK AUTOINCREMENT
+  JobId: "TEXT NOT NULL  → JobQueue.Id"
+  Timestamp: TEXT NOT NULL
+  Endpoint: TEXT NOT NULL
+  Success: "INTEGER NOT NULL  (0|1)"
+  Error: TEXT NULL
+  RequestPayload: TEXT NULL
+  ResponsePayload: TEXT NULL
+}
+
+# ── Produkte ──────────────────────────────
+
+Products: {
+  shape: sql_table
+  Id: TEXT PK
+  JobId: TEXT NOT NULL
+  ActindoProductId: INTEGER NULL
+  Sku: TEXT NOT NULL
+  Name: TEXT NOT NULL
+  VariantStatus: "TEXT NOT NULL  (single|master|child)"
+  ParentSku: TEXT NULL
+  VariantCode: TEXT NULL
+  CreatedAt: TEXT NOT NULL
+  LastPrice: REAL NULL
+  LastPriceEmployee: REAL NULL
+  LastPriceMember: REAL NULL
+  LastStock: INTEGER NULL
+  LastWarehouseId: INTEGER NULL
+  LastPriceUpdatedAt: TEXT NULL
+  LastStockUpdatedAt: TEXT NULL
+}
+
+ProductStocks: {
+  shape: sql_table
+  Sku: "TEXT PK (composite)"
+  WarehouseId: "INTEGER PK (composite)"
+  Stock: INTEGER NOT NULL
+  UpdatedAt: TEXT NOT NULL
+}
+
+# ── Kunden ────────────────────────────────
+
+Customers: {
+  shape: sql_table
+  ActindoCustomerId: INTEGER PK
+  JobId: TEXT NOT NULL
+  DebtorNumber: TEXT NOT NULL
+  Name: TEXT NOT NULL
+  CreatedAt: TEXT NOT NULL
+  UpdatedAt: TEXT NOT NULL
+}
+
+# ─────────────────────────────────────────
+#  Beziehungen
+# ─────────────────────────────────────────
+
+JobLogs.JobId -> JobQueue.Id: {
+  label: "N : 1"
+}
+
+Products.ParentSku -> Products.Sku: {
+  label: "Variante → Master"
+  style.stroke-dash: 4
+}
+
+ProductStocks.Sku -> Products.Sku: {
+  label: "N : 1"
+}
