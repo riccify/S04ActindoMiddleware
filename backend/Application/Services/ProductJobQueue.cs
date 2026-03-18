@@ -61,25 +61,65 @@ public sealed class ProductJobQueue
 
     private readonly SemaphoreSlim _semaphore = new(5, 5);
     private readonly ConcurrentDictionary<Guid, ProductJobInfo> _jobs = new();
+    private readonly ISqliteJobStore _store;
     private readonly ILogger<ProductJobQueue> _logger;
 
-    public ProductJobQueue(ILogger<ProductJobQueue> logger)
+    public ProductJobQueue(ISqliteJobStore store, ILogger<ProductJobQueue> logger)
     {
+        _store = store;
         _logger = logger;
+        LoadFromStore();
+    }
+
+    private void LoadFromStore()
+    {
+        try
+        {
+            var persisted = _store.LoadAll();
+            foreach (var record in persisted)
+            {
+                _jobs[record.Job.Id] = record.Job;
+                foreach (var log in record.Logs)
+                    record.Job.AddLogEntry(log);
+
+                // Re-schedule expiry for completed jobs
+                if (record.Job.Status == ProductSyncJobStatus.Completed && record.Job.CompletedAt.HasValue)
+                {
+                    var remaining = record.Job.CompletedAt.Value.AddDays(5) - DateTimeOffset.UtcNow;
+                    if (remaining > TimeSpan.Zero)
+                        _ = Task.Delay(remaining).ContinueWith(_ =>
+                        {
+                            _store.Delete(record.Job.Id);
+                            _jobs.TryRemove(record.Job.Id, out _);
+                        });
+                    else
+                        _jobs.TryRemove(record.Job.Id, out _);
+                }
+            }
+            _logger.LogInformation("Loaded {Count} persisted jobs from store", persisted.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load persisted jobs");
+        }
     }
 
     /// <summary>Hängt einen API-Log-Eintrag an den Job mit der gegebenen ID.</summary>
     public void AddLog(Guid jobId, string endpoint, bool success, string? error = null, string? requestPayload = null, string? responsePayload = null)
     {
-        if (_jobs.TryGetValue(jobId, out var job))
-            job.AddLogEntry(new ProductJobLogEntry
-            {
-                Endpoint = endpoint,
-                Success = success,
-                Error = error,
-                RequestPayload = requestPayload,
-                ResponsePayload = responsePayload
-            });
+        if (!_jobs.TryGetValue(jobId, out var job))
+            return;
+
+        var entry = new ProductJobLogEntry
+        {
+            Endpoint        = endpoint,
+            Success         = success,
+            Error           = error,
+            RequestPayload  = requestPayload,
+            ResponsePayload = responsePayload
+        };
+        job.AddLogEntry(entry);
+        _store.AppendLog(jobId, entry);
     }
 
     /// <summary>Gibt die Log-Einträge eines Jobs zurück, oder null wenn der Job nicht existiert.</summary>
@@ -94,14 +134,15 @@ public sealed class ProductJobQueue
     {
         var info = new ProductJobInfo
         {
-            Id = id,
-            Sku = sku,
+            Id        = id,
+            Sku       = sku,
             Operation = operation,
-            Status = ProductSyncJobStatus.Running,
+            Status    = ProductSyncJobStatus.Running,
             StartedAt = DateTimeOffset.UtcNow
         };
         _jobs[info.Id] = info;
         _currentJobId.Value = info.Id;
+        _store.Upsert(info);
         _logger.LogInformation(
             "Sync job registered: {JobId} SKU={Sku} Operation={Operation}",
             info.Id, sku, operation);
@@ -114,9 +155,10 @@ public sealed class ProductJobQueue
         if (!_jobs.TryGetValue(jobId, out var info))
             return;
 
-        info.Status = success ? ProductSyncJobStatus.Completed : ProductSyncJobStatus.Failed;
+        info.Status      = success ? ProductSyncJobStatus.Completed : ProductSyncJobStatus.Failed;
         info.CompletedAt = DateTimeOffset.UtcNow;
-        info.Error = error;
+        info.Error       = error;
+        _store.Upsert(info);
 
         _logger.LogInformation(
             "Sync job {Status}: {JobId} SKU={Sku}",
@@ -124,19 +166,24 @@ public sealed class ProductJobQueue
 
         if (success)
             _ = Task.Delay(TimeSpan.FromDays(5))
-                    .ContinueWith(t => _jobs.TryRemove(jobId, out _));
+                    .ContinueWith(_ =>
+                    {
+                        _store.Delete(jobId);
+                        _jobs.TryRemove(jobId, out _);
+                    });
     }
 
     public Guid Enqueue(string sku, string operation, string? bufferId, Func<CancellationToken, Task> work)
     {
         var info = new ProductJobInfo
         {
-            Sku = sku,
+            Sku       = sku,
             Operation = operation,
-            BufferId = bufferId
+            BufferId  = bufferId
         };
 
         _jobs[info.Id] = info;
+        _store.Upsert(info);
 
         _logger.LogInformation(
             "Product sync job queued: {JobId} SKU={Sku} Operation={Operation} BufferId={BufferId}",
@@ -151,9 +198,10 @@ public sealed class ProductJobQueue
     {
         await _semaphore.WaitAsync();
 
-        info.Status = ProductSyncJobStatus.Running;
+        info.Status    = ProductSyncJobStatus.Running;
         info.StartedAt = DateTimeOffset.UtcNow;
         _currentJobId.Value = info.Id;
+        _store.Upsert(info);
 
         _logger.LogInformation(
             "Product sync job started: {JobId} SKU={Sku} Operation={Operation}",
@@ -172,7 +220,7 @@ public sealed class ProductJobQueue
         catch (Exception ex)
         {
             info.Status = ProductSyncJobStatus.Failed;
-            info.Error = ex.Message;
+            info.Error  = ex.Message;
 
             _logger.LogError(ex,
                 "Product sync job failed: {JobId} SKU={Sku}",
@@ -180,18 +228,27 @@ public sealed class ProductJobQueue
         }
         finally
         {
-            _currentJobId.Value = null;
+            _currentJobId.Value  = null;
             _semaphore.Release();
             info.CompletedAt = DateTimeOffset.UtcNow;
+            _store.Upsert(info);
 
             // Successful jobs: keep 5 days; failed jobs: keep indefinitely
             if (info.Status == ProductSyncJobStatus.Completed)
                 _ = Task.Delay(TimeSpan.FromDays(5))
-                        .ContinueWith(t => _jobs.TryRemove(info.Id, out _));
+                        .ContinueWith(_ =>
+                        {
+                            _store.Delete(info.Id);
+                            _jobs.TryRemove(info.Id, out _);
+                        });
         }
     }
 
-    public bool RemoveJob(Guid jobId) => _jobs.TryRemove(jobId, out _);
+    public bool RemoveJob(Guid jobId)
+    {
+        _store.Delete(jobId);
+        return _jobs.TryRemove(jobId, out _);
+    }
 
     public IReadOnlyList<ProductJobInfo> GetAll() =>
         _jobs.Values.OrderBy(j => j.QueuedAt).ToList();
