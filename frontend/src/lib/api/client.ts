@@ -160,7 +160,9 @@ export const products = {
 		request<{ success: boolean; responsePayload: string | null; error?: string }>(
 			'/api/actindo/products/log-replay',
 			{ method: 'POST', body: JSON.stringify({ endpoint, requestPayload }) }
-		)
+		),
+
+	navSyncErrors: () => request<NavSyncErrorsDto>('/api/products/nav-sync-errors')
 };
 
 // Customers API
@@ -208,8 +210,6 @@ export const settings = {
 
 	getActindoBaseUrl: () =>
 		request<{ actindoBaseUrl: string | null }>('/api/products/actindo-base-url'),
-
-	navSyncErrors: () => request<NavSyncErrorsDto>('/api/products/nav-sync-errors'),
 
 	update: (data: ActindoSettings) =>
 		request<void>('/api/settings/actindo', {
