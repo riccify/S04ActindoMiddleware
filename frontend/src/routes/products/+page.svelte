@@ -86,9 +86,6 @@
 
 	function switchTab(tab: Tab) {
 		activeTab = tab;
-		if (tab === 'sync-errors' && syncErrors === null && !syncErrorsLoading) {
-			loadSyncErrors();
-		}
 	}
 
 	// Expanded master products (SKU -> variants)
@@ -152,6 +149,7 @@
 
 	onMount(() => {
 		loadProducts();
+		loadSyncErrors();
 		settingsApi.getActindoBaseUrl()
 			.then((r) => { if (r.actindoBaseUrl) actindoBaseUrl = r.actindoBaseUrl; })
 			.catch(() => {});
@@ -168,6 +166,7 @@
 		} finally {
 			loading = false;
 		}
+		loadSyncErrors();
 	}
 
 	async function toggleVariants(masterSku: string) {
