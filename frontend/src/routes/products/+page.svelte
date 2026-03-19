@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { RefreshCw, Search, Package, ChevronDown, ChevronRight, X, Warehouse, ExternalLink, AlertTriangle, ChevronRight as ChevronRightIcon } from 'lucide-svelte';
-	import { products as productsApi, settings as settingsApi } from '$api/client';
+	import { RefreshCw, Search, Package, ChevronDown, ChevronRight, X, Warehouse, ExternalLink, AlertTriangle, ChevronRight as ChevronRightIcon, ArrowUpToLine, Loader2 } from 'lucide-svelte';
+	import { products as productsApi, settings as settingsApi, sync as syncApi } from '$api/client';
 	import type { ProductListItem, ProductStockItem, NavSyncErrorsDto, NavSyncMissingItem } from '$api/types';
 	import { formatDate } from '$utils/format';
 	import PageHeader from '$components/layout/PageHeader.svelte';
@@ -51,6 +51,24 @@
 		if (next.has(sku)) next.delete(sku);
 		else next.add(sku);
 		syncErrorsExpandedSkus = next;
+	}
+
+	let fixingSkus = $state<Set<string>>(new Set());
+
+	async function fixNavId(sku: string, e: MouseEvent) {
+		e.stopPropagation();
+		if (fixingSkus.has(sku)) return;
+		fixingSkus = new Set([...fixingSkus, sku]);
+		try {
+			await syncApi.forceSyncProducts([sku]);
+			await loadSyncErrors();
+		} catch {
+			// ignore — user can retry
+		} finally {
+			const next = new Set(fixingSkus);
+			next.delete(sku);
+			fixingSkus = next;
+		}
 	}
 
 	function switchTab(tab: Tab) {
@@ -547,7 +565,8 @@
 						<th class="pb-3 pr-4 font-medium text-gray-400 text-xs uppercase tracking-wider">NAV hat</th>
 						<th class="pb-3 pr-4 font-medium text-gray-400 text-xs uppercase tracking-wider">Typ</th>
 						<th class="pb-3 pr-4 font-medium text-gray-400 text-xs uppercase tracking-wider">Problem</th>
-						<th class="pb-3 font-medium text-gray-400 text-xs uppercase tracking-wider">Varianten</th>
+						<th class="pb-3 pr-4 font-medium text-gray-400 text-xs uppercase tracking-wider">Varianten</th>
+						<th class="pb-3"></th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-white/5">
@@ -628,7 +647,7 @@
 							</td>
 
 							<!-- Varianten-Probleme -->
-							<td class="py-3">
+							<td class="py-3 pr-4">
 								{#if item.variantStatus === 'master' && hasProblemVariants}
 									{@const missingCount = item.missingVariants.filter(v => v.status === 'missing').length}
 									{@const mismatchCount = item.missingVariants.filter(v => v.status === 'mismatch').length}
@@ -644,6 +663,28 @@
 								{:else}
 									<span class="text-gray-600">—</span>
 								{/if}
+							</td>
+
+							<!-- Fix button -->
+							<td class="py-3">
+								<button
+									type="button"
+									onclick={(e) => fixNavId(item.sku, e)}
+									disabled={fixingSkus.has(item.sku)}
+									class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium
+										bg-royal-600/20 border border-royal-500/30 text-royal-300
+										hover:bg-royal-600/40 hover:text-white transition-colors
+										disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+									title="Actindo ID in NAV schreiben"
+								>
+									{#if fixingSkus.has(item.sku)}
+										<Loader2 size={12} class="animate-spin" />
+										Setze...
+									{:else}
+										<ArrowUpToLine size={12} />
+										ID in NAV setzen
+									{/if}
+								</button>
 							</td>
 						</tr>
 
@@ -692,6 +733,7 @@
 											</span>
 										{/if}
 									</td>
+									<td class="py-2"></td>
 									<td class="py-2"></td>
 								</tr>
 							{/each}
