@@ -223,7 +223,20 @@ public sealed class NavClient : INavClient
             response.EnsureSuccessStatusCode();
 
             using var document = JsonDocument.Parse(responseContent);
-            return document.RootElement.Clone();
+            var root = document.RootElement.Clone();
+
+            // NAV returns HTTP 200 even for errors — check body for success: false
+            if (root.TryGetProperty("success", out var successProp) &&
+                successProp.ValueKind == JsonValueKind.False)
+            {
+                var errorMsg = root.TryGetProperty("error", out var errProp)
+                    ? errProp.GetString()
+                    : null;
+                throw new InvalidOperationException(
+                    string.IsNullOrWhiteSpace(errorMsg) ? "NAV API meldet Fehler (success: false)" : errorMsg);
+            }
+
+            return root;
         }
         catch (Exception ex)
         {
