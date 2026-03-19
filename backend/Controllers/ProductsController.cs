@@ -123,14 +123,16 @@ public sealed class ProductsController : ControllerBase
             return StatusCode(502, new { error = "Fehler beim Laden der Produktdaten", details = ex.Message });
         }
 
-        // Build set of all actindo_ids already stored in NAV
-        var navActindoIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var nav in navProducts)
-        {
-            if (!string.IsNullOrEmpty(nav.ActindoId)) navActindoIds.Add(nav.ActindoId);
-            foreach (var v in nav.Variants)
-                if (!string.IsNullOrEmpty(v.ActindoId)) navActindoIds.Add(v.ActindoId);
-        }
+        // Build SKU-keyed lookups for NAV masters and variants
+        var navBySku = navProducts
+            .GroupBy(p => p.Sku, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        // Flat lookup for all NAV variant entries (nav_id is the variant SKU)
+        var navVariantBySku = navProducts
+            .SelectMany(p => p.Variants)
+            .GroupBy(v => v.NavId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
         var children = actindoProducts.Where(p => p.VariantStatus == "child").ToList();
         var mastersAndSingles = actindoProducts.Where(p => p.VariantStatus != "child").ToList();
@@ -139,29 +141,79 @@ public sealed class ProductsController : ControllerBase
 
         foreach (var product in mastersAndSingles.OrderBy(p => p.Sku))
         {
-            var productMissing = !navActindoIds.Contains(product.Id.ToString());
+            // Determine master/single status vs NAV
+            navBySku.TryGetValue(product.Sku, out var navRecord);
+            var actindoIdStr = product.Id.ToString();
 
+            string masterStatus;
+            string? masterNavActindoId = null;
+
+            if (navRecord == null)
+            {
+                // Not in NAV at all
+                masterStatus = "missing";
+            }
+            else if (string.IsNullOrEmpty(navRecord.ActindoId))
+            {
+                // In NAV but actindo_id not written back yet
+                masterStatus = "missing";
+            }
+            else if (!string.Equals(navRecord.ActindoId, actindoIdStr, StringComparison.OrdinalIgnoreCase))
+            {
+                // In NAV but wrong actindo_id
+                masterStatus = "mismatch";
+                masterNavActindoId = navRecord.ActindoId;
+            }
+            else
+            {
+                masterStatus = "ok";
+            }
+
+            // Check variants
             var variantChildren = product.VariantStatus == "master"
                 ? children
                     .Where(c => c.Sku.StartsWith(product.Sku + "-", StringComparison.OrdinalIgnoreCase))
                     .ToList()
                 : [];
 
-            var missingVariants = variantChildren
-                .Where(c => !navActindoIds.Contains(c.Id.ToString()))
-                .Select(c => new NavSyncMissingVariant { Sku = c.Sku, ActindoId = c.Id })
-                .OrderBy(c => c.Sku)
-                .ToList();
+            var problemVariants = new List<NavSyncMissingVariant>();
+            foreach (var child in variantChildren.OrderBy(c => c.Sku))
+            {
+                navVariantBySku.TryGetValue(child.Sku, out var navVariant);
+                var childIdStr = child.Id.ToString();
 
-            if (productMissing || missingVariants.Count > 0)
+                if (navVariant == null || string.IsNullOrEmpty(navVariant.ActindoId))
+                {
+                    problemVariants.Add(new NavSyncMissingVariant
+                    {
+                        Sku = child.Sku,
+                        ActindoId = child.Id,
+                        Status = "missing"
+                    });
+                }
+                else if (!string.Equals(navVariant.ActindoId, childIdStr, StringComparison.OrdinalIgnoreCase))
+                {
+                    problemVariants.Add(new NavSyncMissingVariant
+                    {
+                        Sku = child.Sku,
+                        ActindoId = child.Id,
+                        Status = "mismatch",
+                        NavActindoId = navVariant.ActindoId
+                    });
+                }
+            }
+
+            if (masterStatus != "ok" || problemVariants.Count > 0)
             {
                 items.Add(new NavSyncMissingItem
                 {
                     Sku = product.Sku,
                     ActindoId = product.Id,
                     VariantStatus = product.VariantStatus,
+                    Status = masterStatus == "ok" ? "ok" : masterStatus,
+                    NavActindoId = masterNavActindoId,
                     TotalVariants = variantChildren.Count,
-                    MissingVariants = missingVariants
+                    MissingVariants = problemVariants
                 });
             }
         }

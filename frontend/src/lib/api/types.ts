@@ -168,12 +168,16 @@ export interface ActindoSettings {
 export interface NavSyncMissingVariant {
 	sku: string;
 	actindoId: number;
+	status: 'missing' | 'mismatch';
+	navActindoId: string | null;
 }
 
 export interface NavSyncMissingItem {
 	sku: string;
 	actindoId: number;
 	variantStatus: 'single' | 'master';
+	status: 'missing' | 'mismatch' | 'ok';
+	navActindoId: string | null;
 	totalVariants: number;
 	missingVariants: NavSyncMissingVariant[];
 }

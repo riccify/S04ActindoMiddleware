@@ -543,22 +543,27 @@
 					<tr class="border-b border-white/10 text-left">
 						<th class="pb-3 pr-2 w-6"></th>
 						<th class="pb-3 pr-4 font-medium text-gray-400 text-xs uppercase tracking-wider">SKU</th>
-						<th class="pb-3 pr-4 font-medium text-gray-400 text-xs uppercase tracking-wider">Actindo ID</th>
+						<th class="pb-3 pr-4 font-medium text-gray-400 text-xs uppercase tracking-wider">Actindo ID (Soll)</th>
+						<th class="pb-3 pr-4 font-medium text-gray-400 text-xs uppercase tracking-wider">NAV hat</th>
 						<th class="pb-3 pr-4 font-medium text-gray-400 text-xs uppercase tracking-wider">Typ</th>
-						<th class="pb-3 font-medium text-gray-400 text-xs uppercase tracking-wider">Varianten fehlen</th>
+						<th class="pb-3 pr-4 font-medium text-gray-400 text-xs uppercase tracking-wider">Problem</th>
+						<th class="pb-3 font-medium text-gray-400 text-xs uppercase tracking-wider">Varianten</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-white/5">
 					{#each syncErrors.items as item (item.sku)}
 						{@const isExpanded = syncErrorsExpandedSkus.has(item.sku)}
-						{@const hasMissingVariants = item.missingVariants.length > 0}
+						{@const hasProblemVariants = item.missingVariants.length > 0}
+						{@const isMismatch = item.status === 'mismatch'}
 						<tr
-							class="hover:bg-white/5 transition-colors {hasMissingVariants ? 'cursor-pointer' : ''}"
-							onclick={() => hasMissingVariants && toggleSyncErrorExpand(item.sku)}
+							class="hover:bg-white/5 transition-colors
+								{isMismatch ? 'bg-amber-900/5' : ''}
+								{hasProblemVariants ? 'cursor-pointer' : ''}"
+							onclick={() => hasProblemVariants && toggleSyncErrorExpand(item.sku)}
 						>
 							<!-- Expand toggle -->
 							<td class="py-3 pr-2 text-gray-500">
-								{#if hasMissingVariants}
+								{#if hasProblemVariants}
 									<div class="transition-transform duration-150 {isExpanded ? 'rotate-90' : ''}">
 										<ChevronRight size={14} />
 									</div>
@@ -582,9 +587,20 @@
 								</div>
 							</td>
 
-							<!-- Actindo ID -->
+							<!-- Actindo ID (Soll) -->
 							<td class="py-3 pr-4">
-								<span class="font-mono text-sm text-gray-400">{item.actindoId}</span>
+								<span class="font-mono text-sm text-green-400">{item.actindoId}</span>
+							</td>
+
+							<!-- NAV hat -->
+							<td class="py-3 pr-4">
+								{#if item.status === 'missing'}
+									<span class="text-xs text-gray-600 italic">—</span>
+								{:else if item.status === 'mismatch'}
+									<span class="font-mono text-sm text-amber-400">{item.navActindoId}</span>
+								{:else}
+									<span class="text-xs text-gray-600">—</span>
+								{/if}
 							</td>
 
 							<!-- Typ -->
@@ -596,32 +612,49 @@
 								{/if}
 							</td>
 
-							<!-- Varianten fehlen -->
+							<!-- Problem -->
+							<td class="py-3 pr-4">
+								{#if item.status === 'missing'}
+									<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-red-900/40 border border-red-500/30 text-red-300">
+										Fehlt in NAV
+									</span>
+								{:else if item.status === 'mismatch'}
+									<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-900/40 border border-amber-500/30 text-amber-300">
+										ID-Konflikt
+									</span>
+								{:else}
+									<span class="text-xs text-gray-500">Varianten</span>
+								{/if}
+							</td>
+
+							<!-- Varianten-Probleme -->
 							<td class="py-3">
-								{#if item.variantStatus === 'master'}
-									{#if item.missingVariants.length === item.totalVariants && item.totalVariants > 0}
-										<span class="text-xs text-red-400 font-medium">Alle {item.totalVariants} fehlen</span>
-									{:else if item.missingVariants.length > 0}
-										<span class="text-xs text-amber-400 font-medium">{item.missingVariants.length} von {item.totalVariants}</span>
-									{:else if item.totalVariants > 0}
-										<span class="text-xs text-gray-500">Varianten OK, Master fehlt</span>
-									{:else}
-										<span class="text-gray-600">—</span>
-									{/if}
+								{#if item.variantStatus === 'master' && hasProblemVariants}
+									{@const missingCount = item.missingVariants.filter(v => v.status === 'missing').length}
+									{@const mismatchCount = item.missingVariants.filter(v => v.status === 'mismatch').length}
+									<div class="flex flex-wrap gap-1">
+										{#if missingCount > 0}
+											<span class="text-xs text-red-400">{missingCount} fehlend</span>
+										{/if}
+										{#if mismatchCount > 0}
+											<span class="text-xs text-amber-400">{mismatchCount} Konflikt</span>
+										{/if}
+										<span class="text-xs text-gray-600">/ {item.totalVariants}</span>
+									</div>
 								{:else}
 									<span class="text-gray-600">—</span>
 								{/if}
 							</td>
 						</tr>
 
-						<!-- Expanded missing variants -->
-						{#if isExpanded && hasMissingVariants}
+						<!-- Expanded variant problems -->
+						{#if isExpanded && hasProblemVariants}
 							{#each item.missingVariants as variant (variant.sku)}
-								<tr class="bg-red-900/10 border-b border-white/5">
+								<tr class="{variant.status === 'mismatch' ? 'bg-amber-900/10' : 'bg-red-900/10'} border-b border-white/5">
 									<td class="py-2 pr-2"></td>
 									<td class="py-2 pr-4">
 										<div class="flex items-center gap-1.5 pl-4">
-											<span class="text-red-600 mr-1">└</span>
+											<span class="{variant.status === 'mismatch' ? 'text-amber-700' : 'text-red-700'} mr-1">└</span>
 											<span class="font-mono text-sm text-gray-400">{variant.sku}</span>
 											<a
 												href={actindoProductUrl(variant.sku)}
@@ -636,14 +669,30 @@
 										</div>
 									</td>
 									<td class="py-2 pr-4">
-										<span class="font-mono text-sm text-gray-500">{variant.actindoId}</span>
+										<span class="font-mono text-sm text-green-400">{variant.actindoId}</span>
+									</td>
+									<td class="py-2 pr-4">
+										{#if variant.status === 'mismatch'}
+											<span class="font-mono text-sm text-amber-400">{variant.navActindoId}</span>
+										{:else}
+											<span class="text-xs text-gray-600 italic">—</span>
+										{/if}
 									</td>
 									<td class="py-2 pr-4">
 										<Badge variant="default">Variante</Badge>
 									</td>
-									<td class="py-2">
-										<span class="text-xs text-red-400">Fehlt in NAV</span>
+									<td class="py-2 pr-4">
+										{#if variant.status === 'mismatch'}
+											<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-900/40 border border-amber-500/30 text-amber-300">
+												ID-Konflikt
+											</span>
+										{:else}
+											<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-red-900/40 border border-red-500/30 text-red-300">
+												Fehlt in NAV
+											</span>
+										{/if}
 									</td>
+									<td class="py-2"></td>
 								</tr>
 							{/each}
 						{/if}

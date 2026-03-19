@@ -106,16 +106,20 @@ public sealed class CustomerSyncStatusDto
 }
 
 /// <summary>
-/// A single variant missing from NAV
+/// A single variant with a sync problem (missing or ID mismatch)
 /// </summary>
 public sealed class NavSyncMissingVariant
 {
     public string Sku { get; init; } = string.Empty;
     public int ActindoId { get; init; }
+    /// <summary>"missing" or "mismatch"</summary>
+    public string Status { get; init; } = "missing";
+    /// <summary>The wrong ID currently stored in NAV (only set when Status == "mismatch")</summary>
+    public string? NavActindoId { get; init; }
 }
 
 /// <summary>
-/// A product (or master with variants) that exists in Actindo but is not written back to NAV
+/// A product (or master with variants) that has a sync problem with NAV
 /// </summary>
 public sealed class NavSyncMissingItem
 {
@@ -123,6 +127,10 @@ public sealed class NavSyncMissingItem
     public int ActindoId { get; init; }
     public string VariantStatus { get; init; } = "single";
     public int TotalVariants { get; init; }
+    /// <summary>"missing" or "mismatch"</summary>
+    public string Status { get; init; } = "missing";
+    /// <summary>The wrong ID currently stored in NAV (only set when Status == "mismatch")</summary>
+    public string? NavActindoId { get; init; }
     public IReadOnlyList<NavSyncMissingVariant> MissingVariants { get; init; } = [];
 }
 
