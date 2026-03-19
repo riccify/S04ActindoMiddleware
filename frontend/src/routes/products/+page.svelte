@@ -74,7 +74,8 @@
 			await syncApi.forceSyncProducts([sku]);
 			await loadSyncErrors();
 		} catch (err) {
-			showErrorToast(err instanceof Error ? err.message : `Fehler beim Setzen der ID für ${sku}`);
+			const msg = err instanceof Error ? err.message : 'Unbekannter Fehler';
+			showErrorToast(`ID konnte nicht gesetzt werden: ${msg}`);
 		} finally {
 			const next = new Set(fixingSkus);
 			next.delete(sku);
