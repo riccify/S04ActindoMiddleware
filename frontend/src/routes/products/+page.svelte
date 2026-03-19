@@ -53,6 +53,17 @@
 		syncErrorsExpandedSkus = next;
 	}
 
+	// Toast notifications
+	interface Toast { id: number; message: string; }
+	let toasts = $state<Toast[]>([]);
+	let _toastId = 0;
+
+	function showErrorToast(message: string) {
+		const id = ++_toastId;
+		toasts = [...toasts, { id, message }];
+		setTimeout(() => { toasts = toasts.filter((t) => t.id !== id); }, 5000);
+	}
+
 	let fixingSkus = $state<Set<string>>(new Set());
 
 	async function fixNavId(sku: string, e: MouseEvent) {
@@ -62,8 +73,8 @@
 		try {
 			await syncApi.forceSyncProducts([sku]);
 			await loadSyncErrors();
-		} catch {
-			// ignore — user can retry
+		} catch (err) {
+			showErrorToast(err instanceof Error ? err.message : `Fehler beim Setzen der ID für ${sku}`);
 		} finally {
 			const next = new Set(fixingSkus);
 			next.delete(sku);
@@ -233,7 +244,11 @@
 			? 'bg-red-900/40 border border-red-500/40 text-red-200'
 			: 'text-gray-400 hover:text-gray-200'}"
 	>
-		<AlertTriangle size={14} />
+		{#if syncErrorsLoading}
+			<Loader2 size={14} class="animate-spin" />
+		{:else}
+			<AlertTriangle size={14} />
+		{/if}
 		NAV Sync-Fehler
 		{#if syncErrors && syncErrors.missingFromNav > 0}
 			<span class="ml-0.5 text-xs px-1.5 py-0.5 rounded-full bg-red-900/60 text-red-300 border border-red-500/30">
@@ -835,5 +850,19 @@
 				{/if}
 			</div>
 		</div>
+	</div>
+{/if}
+
+<!-- Toast Notifications -->
+{#if toasts.length > 0}
+	<div class="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
+		{#each toasts as toast (toast.id)}
+			<div class="flex items-start gap-3 px-4 py-3 rounded-xl shadow-2xl
+				bg-gray-900 border border-red-500/40 text-red-300
+				min-w-[280px] max-w-[420px] pointer-events-auto">
+				<AlertTriangle size={16} class="text-red-400 shrink-0 mt-0.5" />
+				<p class="text-sm leading-snug">{toast.message}</p>
+			</div>
+		{/each}
 	</div>
 {/if}
