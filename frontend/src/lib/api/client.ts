@@ -16,7 +16,8 @@ import type {
 	ApproveRegistrationRequest,
 	ActindoSettings,
 	ProductSyncStatus,
-	CustomerSyncStatus
+	CustomerSyncStatus,
+	NavSyncErrorsDto
 } from './types';
 
 class ApiError extends Error {
@@ -207,6 +208,8 @@ export const settings = {
 
 	getActindoBaseUrl: () =>
 		request<{ actindoBaseUrl: string | null }>('/api/products/actindo-base-url'),
+
+	navSyncErrors: () => request<NavSyncErrorsDto>('/api/products/nav-sync-errors'),
 
 	update: (data: ActindoSettings) =>
 		request<void>('/api/settings/actindo', {

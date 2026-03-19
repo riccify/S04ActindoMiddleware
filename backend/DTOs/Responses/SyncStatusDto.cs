@@ -106,6 +106,37 @@ public sealed class CustomerSyncStatusDto
 }
 
 /// <summary>
+/// A single variant missing from NAV
+/// </summary>
+public sealed class NavSyncMissingVariant
+{
+    public string Sku { get; init; } = string.Empty;
+    public int ActindoId { get; init; }
+}
+
+/// <summary>
+/// A product (or master with variants) that exists in Actindo but is not written back to NAV
+/// </summary>
+public sealed class NavSyncMissingItem
+{
+    public string Sku { get; init; } = string.Empty;
+    public int ActindoId { get; init; }
+    public string VariantStatus { get; init; } = "single";
+    public int TotalVariants { get; init; }
+    public IReadOnlyList<NavSyncMissingVariant> MissingVariants { get; init; } = [];
+}
+
+/// <summary>
+/// Result of the NAV sync-error check
+/// </summary>
+public sealed class NavSyncErrorsDto
+{
+    public int TotalInActindo { get; init; }
+    public int MissingFromNav { get; init; }
+    public IReadOnlyList<NavSyncMissingItem> Items { get; init; } = [];
+}
+
+/// <summary>
 /// Request to sync products to NAV
 /// </summary>
 public sealed class SyncProductsRequest

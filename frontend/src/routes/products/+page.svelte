@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { RefreshCw, Search, Package, ChevronDown, ChevronRight, X, Warehouse, ExternalLink } from 'lucide-svelte';
+	import { RefreshCw, Search, Package, ChevronDown, ChevronRight, X, Warehouse, ExternalLink, AlertTriangle, ChevronRight as ChevronRightIcon } from 'lucide-svelte';
 	import { products as productsApi, settings as settingsApi } from '$api/client';
-	import type { ProductListItem, ProductStockItem } from '$api/types';
+	import type { ProductListItem, ProductStockItem, NavSyncErrorsDto, NavSyncMissingItem } from '$api/types';
 	import { formatDate } from '$utils/format';
 	import PageHeader from '$components/layout/PageHeader.svelte';
 	import Card from '$components/ui/Card.svelte';
@@ -21,8 +21,44 @@
 	let loading = $state(true);
 	let error = $state('');
 	let search = $state('');
+	// Tabs
+	type Tab = 'products' | 'sync-errors';
+	let activeTab = $state<Tab>('products');
+
 	const DEFAULT_ACTINDO_BASE_URL = 'https://schalke-dev.dev.actindo.com';
 	let actindoBaseUrl = $state(DEFAULT_ACTINDO_BASE_URL);
+
+	// NAV Sync Errors tab
+	let syncErrors = $state<NavSyncErrorsDto | null>(null);
+	let syncErrorsLoading = $state(false);
+	let syncErrorsError = $state('');
+	let syncErrorsExpandedSkus = $state<Set<string>>(new Set());
+
+	async function loadSyncErrors() {
+		syncErrorsLoading = true;
+		syncErrorsError = '';
+		try {
+			syncErrors = await productsApi.navSyncErrors();
+		} catch (err) {
+			syncErrorsError = err instanceof Error ? err.message : 'Fehler beim Laden';
+		} finally {
+			syncErrorsLoading = false;
+		}
+	}
+
+	function toggleSyncErrorExpand(sku: string) {
+		const next = new Set(syncErrorsExpandedSkus);
+		if (next.has(sku)) next.delete(sku);
+		else next.add(sku);
+		syncErrorsExpandedSkus = next;
+	}
+
+	function switchTab(tab: Tab) {
+		activeTab = tab;
+		if (tab === 'sync-errors' && syncErrors === null && !syncErrorsLoading) {
+			loadSyncErrors();
+		}
+	}
 
 	// Expanded master products (SKU -> variants)
 	let expandedProducts: Record<string, ProductListItem[]> = $state({});
@@ -142,17 +178,58 @@
 
 <PageHeader title="Produkte" subtitle="Uebersicht aller erstellten Produkte">
 	{#snippet actions()}
-		<Button variant="ghost" onclick={loadProducts} disabled={loading}>
-			<RefreshCw size={16} class={loading ? 'animate-spin' : ''} />
-			Aktualisieren
-		</Button>
+		{#if activeTab === 'products'}
+			<Button variant="ghost" onclick={loadProducts} disabled={loading}>
+				<RefreshCw size={16} class={loading ? 'animate-spin' : ''} />
+				Aktualisieren
+			</Button>
+		{:else}
+			<Button variant="ghost" onclick={loadSyncErrors} disabled={syncErrorsLoading}>
+				<RefreshCw size={16} class={syncErrorsLoading ? 'animate-spin' : ''} />
+				Aktualisieren
+			</Button>
+		{/if}
 	{/snippet}
 </PageHeader>
+
+<!-- Tab switcher -->
+<div class="flex gap-1 mb-6 p-1 rounded-xl bg-white/5 border border-white/10 w-fit">
+	<button
+		type="button"
+		onclick={() => switchTab('products')}
+		class="px-4 py-1.5 rounded-lg text-sm font-medium transition-colors
+			{activeTab === 'products'
+			? 'bg-royal-600/40 border border-royal-500/40 text-white'
+			: 'text-gray-400 hover:text-gray-200'}"
+	>
+		Alle Produkte
+		{#if products.length > 0}
+			<span class="ml-1.5 text-xs opacity-60">{products.length}</span>
+		{/if}
+	</button>
+	<button
+		type="button"
+		onclick={() => switchTab('sync-errors')}
+		class="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors
+			{activeTab === 'sync-errors'
+			? 'bg-red-900/40 border border-red-500/40 text-red-200'
+			: 'text-gray-400 hover:text-gray-200'}"
+	>
+		<AlertTriangle size={14} />
+		NAV Sync-Fehler
+		{#if syncErrors && syncErrors.missingFromNav > 0}
+			<span class="ml-0.5 text-xs px-1.5 py-0.5 rounded-full bg-red-900/60 text-red-300 border border-red-500/30">
+				{syncErrors.missingFromNav}
+			</span>
+		{/if}
+	</button>
+</div>
 
 {#if error}
 	<Alert variant="error" class="mb-6">{error}</Alert>
 {/if}
 
+{#if activeTab === 'products'}
 <Card>
 	<!-- Search -->
 	<div class="mb-6">
@@ -427,6 +504,157 @@
 		</div>
 	{/if}
 </Card>
+
+{:else}
+
+<!-- ── NAV Sync-Fehler Tab ───────────────────────────────────── -->
+<Card>
+	{#if syncErrorsLoading && !syncErrors}
+		<div class="flex justify-center py-12">
+			<Spinner />
+		</div>
+	{:else if syncErrorsError}
+		<Alert variant="error">{syncErrorsError}</Alert>
+	{:else if !syncErrors}
+		<div class="text-center py-12 text-gray-400">
+			<AlertTriangle size={48} class="mx-auto mb-4 opacity-40" />
+			<p>Noch keine Daten geladen</p>
+		</div>
+	{:else if syncErrors.missingFromNav === 0}
+		<div class="text-center py-12 text-gray-400">
+			<Package size={48} class="mx-auto mb-4 opacity-40" />
+			<p class="font-medium text-green-400 mb-1">Alles synchronisiert</p>
+			<p class="text-sm text-gray-500">Alle {syncErrors.totalInActindo} Actindo-Produkte sind in NAV eingetragen</p>
+		</div>
+	{:else}
+		<!-- Summary -->
+		<div class="flex items-center gap-4 mb-5 pb-4 border-b border-white/10">
+			<div class="flex items-center gap-2">
+				<AlertTriangle size={16} class="text-red-400" />
+				<span class="text-sm font-medium text-red-300">{syncErrors.missingFromNav} Produkte fehlen in NAV</span>
+			</div>
+			<span class="text-gray-600">·</span>
+			<span class="text-sm text-gray-500">{syncErrors.totalInActindo} Produkte in Actindo gesamt</span>
+		</div>
+
+		<div class="overflow-x-auto">
+			<table class="w-full text-sm">
+				<thead>
+					<tr class="border-b border-white/10 text-left">
+						<th class="pb-3 pr-2 w-6"></th>
+						<th class="pb-3 pr-4 font-medium text-gray-400 text-xs uppercase tracking-wider">SKU</th>
+						<th class="pb-3 pr-4 font-medium text-gray-400 text-xs uppercase tracking-wider">Actindo ID</th>
+						<th class="pb-3 pr-4 font-medium text-gray-400 text-xs uppercase tracking-wider">Typ</th>
+						<th class="pb-3 font-medium text-gray-400 text-xs uppercase tracking-wider">Varianten fehlen</th>
+					</tr>
+				</thead>
+				<tbody class="divide-y divide-white/5">
+					{#each syncErrors.items as item (item.sku)}
+						{@const isExpanded = syncErrorsExpandedSkus.has(item.sku)}
+						{@const hasMissingVariants = item.missingVariants.length > 0}
+						<tr
+							class="hover:bg-white/5 transition-colors {hasMissingVariants ? 'cursor-pointer' : ''}"
+							onclick={() => hasMissingVariants && toggleSyncErrorExpand(item.sku)}
+						>
+							<!-- Expand toggle -->
+							<td class="py-3 pr-2 text-gray-500">
+								{#if hasMissingVariants}
+									<div class="transition-transform duration-150 {isExpanded ? 'rotate-90' : ''}">
+										<ChevronRight size={14} />
+									</div>
+								{/if}
+							</td>
+
+							<!-- SKU -->
+							<td class="py-3 pr-4">
+								<div class="flex items-center gap-1.5">
+									<span class="font-mono text-sm font-semibold text-royal-300">{item.sku}</span>
+									<a
+										href={actindoProductUrl(item.sku)}
+										target="_blank"
+										rel="noopener noreferrer"
+										onclick={(e) => e.stopPropagation()}
+										class="text-gray-600 hover:text-royal-400 transition-colors"
+										title="In Actindo öffnen"
+									>
+										<ExternalLink size={12} />
+									</a>
+								</div>
+							</td>
+
+							<!-- Actindo ID -->
+							<td class="py-3 pr-4">
+								<span class="font-mono text-sm text-gray-400">{item.actindoId}</span>
+							</td>
+
+							<!-- Typ -->
+							<td class="py-3 pr-4">
+								{#if item.variantStatus === 'master'}
+									<Badge variant="primary">Master</Badge>
+								{:else}
+									<Badge variant="default">Single</Badge>
+								{/if}
+							</td>
+
+							<!-- Varianten fehlen -->
+							<td class="py-3">
+								{#if item.variantStatus === 'master'}
+									{#if item.missingVariants.length === item.totalVariants && item.totalVariants > 0}
+										<span class="text-xs text-red-400 font-medium">Alle {item.totalVariants} fehlen</span>
+									{:else if item.missingVariants.length > 0}
+										<span class="text-xs text-amber-400 font-medium">{item.missingVariants.length} von {item.totalVariants}</span>
+									{:else if item.totalVariants > 0}
+										<span class="text-xs text-gray-500">Varianten OK, Master fehlt</span>
+									{:else}
+										<span class="text-gray-600">—</span>
+									{/if}
+								{:else}
+									<span class="text-gray-600">—</span>
+								{/if}
+							</td>
+						</tr>
+
+						<!-- Expanded missing variants -->
+						{#if isExpanded && hasMissingVariants}
+							{#each item.missingVariants as variant (variant.sku)}
+								<tr class="bg-red-900/10 border-b border-white/5">
+									<td class="py-2 pr-2"></td>
+									<td class="py-2 pr-4">
+										<div class="flex items-center gap-1.5 pl-4">
+											<span class="text-red-600 mr-1">└</span>
+											<span class="font-mono text-sm text-gray-400">{variant.sku}</span>
+											<a
+												href={actindoProductUrl(variant.sku)}
+												target="_blank"
+												rel="noopener noreferrer"
+												onclick={(e) => e.stopPropagation()}
+												class="text-gray-600 hover:text-royal-400 transition-colors"
+												title="In Actindo öffnen"
+											>
+												<ExternalLink size={11} />
+											</a>
+										</div>
+									</td>
+									<td class="py-2 pr-4">
+										<span class="font-mono text-sm text-gray-500">{variant.actindoId}</span>
+									</td>
+									<td class="py-2 pr-4">
+										<Badge variant="default">Variante</Badge>
+									</td>
+									<td class="py-2">
+										<span class="text-xs text-red-400">Fehlt in NAV</span>
+									</td>
+								</tr>
+							{/each}
+						{/if}
+					{/each}
+				</tbody>
+			</table>
+		</div>
+	{/if}
+</Card>
+
+{/if}
 
 <!-- Stock Modal -->
 {#if stockModalOpen}

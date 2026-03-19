@@ -164,6 +164,26 @@ export interface ActindoSettings {
 	actindoBaseUrl: string | null;
 }
 
+// NAV Sync Error Types
+export interface NavSyncMissingVariant {
+	sku: string;
+	actindoId: number;
+}
+
+export interface NavSyncMissingItem {
+	sku: string;
+	actindoId: number;
+	variantStatus: 'single' | 'master';
+	totalVariants: number;
+	missingVariants: NavSyncMissingVariant[];
+}
+
+export interface NavSyncErrorsDto {
+	totalInActindo: number;
+	missingFromNav: number;
+	items: NavSyncMissingItem[];
+}
+
 // Sync Types
 export type SyncStatus = 'Synced' | 'NeedsSync' | 'Mismatch' | 'Orphan' | 'ActindoOnly' | 'NavOnly';
 

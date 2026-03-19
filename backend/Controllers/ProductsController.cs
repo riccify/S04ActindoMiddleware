@@ -5,6 +5,7 @@ using ActindoMiddleware.DTOs.Responses;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ActindoMiddleware.Infrastructure.Actindo;
+using ActindoMiddleware.Infrastructure.Nav;
 using System.Threading;
 using ActindoMiddleware.Application.Configuration;
 using ActindoMiddleware.DTOs.Requests;
@@ -23,19 +24,22 @@ public sealed class ProductsController : ControllerBase
     private readonly ActindoClient _actindoClient;
     private readonly IActindoEndpointProvider _endpointProvider;
     private readonly ISettingsStore _settingsStore;
+    private readonly INavClient _navClient;
 
     public ProductsController(
         IDashboardMetricsService metricsService,
         ActindoProductListService productListService,
         ActindoClient actindoClient,
         IActindoEndpointProvider endpointProvider,
-        ISettingsStore settingsStore)
+        ISettingsStore settingsStore,
+        INavClient navClient)
     {
         _metricsService = metricsService;
         _productListService = productListService;
         _actindoClient = actindoClient;
         _endpointProvider = endpointProvider;
         _settingsStore = settingsStore;
+        _navClient = navClient;
     }
 
     [HttpGet]
@@ -92,6 +96,82 @@ public sealed class ProductsController : ControllerBase
             Stock = s.Stock,
             UpdatedAt = s.UpdatedAt
         }));
+    }
+
+    /// <summary>
+    /// Returns all Actindo products whose actindo_id has not yet been written back to NAV.
+    /// </summary>
+    [HttpGet("nav-sync-errors")]
+    public async Task<ActionResult<NavSyncErrorsDto>> GetNavSyncErrors(CancellationToken cancellationToken)
+    {
+        var navConfigured = await _navClient.IsConfiguredAsync(cancellationToken);
+        if (!navConfigured)
+            return BadRequest(new { error = "NAV API ist nicht konfiguriert" });
+
+        IReadOnlyList<ActindoSyncProduct> actindoProducts;
+        IReadOnlyList<NavProductRecord> navProducts;
+        try
+        {
+            var actindoTask = _productListService.GetAllProductsForSyncAsync(cancellationToken);
+            var navTask = _navClient.GetProductsAsync(cancellationToken);
+            await Task.WhenAll(actindoTask, navTask);
+            actindoProducts = actindoTask.Result;
+            navProducts = navTask.Result;
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(502, new { error = "Fehler beim Laden der Produktdaten", details = ex.Message });
+        }
+
+        // Build set of all actindo_ids already stored in NAV
+        var navActindoIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var nav in navProducts)
+        {
+            if (!string.IsNullOrEmpty(nav.ActindoId)) navActindoIds.Add(nav.ActindoId);
+            foreach (var v in nav.Variants)
+                if (!string.IsNullOrEmpty(v.ActindoId)) navActindoIds.Add(v.ActindoId);
+        }
+
+        var children = actindoProducts.Where(p => p.VariantStatus == "child").ToList();
+        var mastersAndSingles = actindoProducts.Where(p => p.VariantStatus != "child").ToList();
+
+        var items = new List<NavSyncMissingItem>();
+
+        foreach (var product in mastersAndSingles.OrderBy(p => p.Sku))
+        {
+            var productMissing = !navActindoIds.Contains(product.Id.ToString());
+
+            var variantChildren = product.VariantStatus == "master"
+                ? children
+                    .Where(c => c.Sku.StartsWith(product.Sku + "-", StringComparison.OrdinalIgnoreCase))
+                    .ToList()
+                : [];
+
+            var missingVariants = variantChildren
+                .Where(c => !navActindoIds.Contains(c.Id.ToString()))
+                .Select(c => new NavSyncMissingVariant { Sku = c.Sku, ActindoId = c.Id })
+                .OrderBy(c => c.Sku)
+                .ToList();
+
+            if (productMissing || missingVariants.Count > 0)
+            {
+                items.Add(new NavSyncMissingItem
+                {
+                    Sku = product.Sku,
+                    ActindoId = product.Id,
+                    VariantStatus = product.VariantStatus,
+                    TotalVariants = variantChildren.Count,
+                    MissingVariants = missingVariants
+                });
+            }
+        }
+
+        return Ok(new NavSyncErrorsDto
+        {
+            TotalInActindo = mastersAndSingles.Count,
+            MissingFromNav = items.Count,
+            Items = items
+        });
     }
 
     [HttpGet("actindo-base-url")]
