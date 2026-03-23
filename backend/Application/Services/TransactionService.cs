@@ -51,7 +51,7 @@ public sealed class TransactionService
                     value = "GU"
                 }
             },
-            serializeOptionals = new[] { "legacyProperties", "_schalke_position_flock_name" },
+            serializeOptionals = new[] { "legacyProperties", "positions._schalke_position_flock_name", "positions._schalke_position_flock_number" },
             start = 0,
             limit = 50
         };
