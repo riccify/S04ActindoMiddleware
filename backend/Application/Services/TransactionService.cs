@@ -34,7 +34,7 @@ public sealed class TransactionService
             {
                 new
                 {
-                    property = "documentDate",
+                    property = "created",
                     @operator = ">",
                     value = formattedDate
                 },
@@ -51,7 +51,7 @@ public sealed class TransactionService
                     value = "GU"
                 }
             },
-            serializeOptionals = new[] { "legacyProperties", "positions._schalke_position_flock_name", "positions._schalke_position_flock_number" },
+            serializeOptionals = new[] { "legacyProperties", "_schalke_position_flock_name" },
             start = 0,
             limit = 50
         };
