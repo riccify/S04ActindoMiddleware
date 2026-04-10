@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
+using ActindoMiddleware.Infrastructure.Serialization;
 
 namespace ActindoMiddleware.Application.Configuration;
 
@@ -18,6 +20,7 @@ public sealed class ActindoSettings
     public string? NavApiToken { get; init; }
 
     // Warehouse name → Actindo ID mappings
+    [JsonConverter(typeof(StringOrNumberIntDictionaryConverter))]
     public Dictionary<string, int> WarehouseMappings { get; init; } = new();
 
     // Base URL for Actindo frontend links (e.g. https://schalke-dev.dev.actindo.com)
