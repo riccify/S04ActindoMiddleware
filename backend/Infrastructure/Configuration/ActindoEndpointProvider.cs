@@ -27,7 +27,7 @@ public sealed class ActindoEndpointProvider : IActindoEndpointProvider
                 return _cache;
 
             var settings = await _settingsStore.GetActindoSettingsAsync(cancellationToken);
-            _cache = ActindoEndpointSet.FromDictionary(settings.Endpoints ?? new());
+            _cache = ActindoEndpointSet.FromDictionary(settings.Endpoints ?? new(), settings.ActindoBaseUrl);
             return _cache;
         }
         finally

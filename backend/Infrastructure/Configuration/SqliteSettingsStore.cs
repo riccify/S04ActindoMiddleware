@@ -141,10 +141,10 @@ CREATE TABLE IF NOT EXISTS Settings (
             TokenEndpoint = source.TokenEndpoint,
             ClientId = source.ClientId,
             ClientSecret = source.ClientSecret,
-            Endpoints = MergeWithDefaults(source.Endpoints),
+            ActindoBaseUrl = NormalizeBaseUrl(source.ActindoBaseUrl),
+            Endpoints = MergeWithDefaults(source.Endpoints, source.ActindoBaseUrl),
             NavApiUrl = source.NavApiUrl,
             NavApiToken = source.NavApiToken,
-            ActindoBaseUrl = source.ActindoBaseUrl,
             WarehouseMappings = source.WarehouseMappings ?? new()
         };
     }
@@ -166,7 +166,7 @@ CREATE TABLE IF NOT EXISTS Settings (
         ["DELETE_PRODUCT"] = ActindoEndpoints.DELETE_PRODUCT
     };
 
-    private static Dictionary<string, string> MergeWithDefaults(IDictionary<string, string>? current)
+    private static Dictionary<string, string> MergeWithDefaults(IDictionary<string, string>? current, string? actindoBaseUrl)
     {
         var merged = new Dictionary<string, string>(BuildDefaultEndpoints(), StringComparer.OrdinalIgnoreCase);
         if (current != null)
@@ -175,11 +175,34 @@ CREATE TABLE IF NOT EXISTS Settings (
             {
                 if (string.IsNullOrWhiteSpace(kvp.Key))
                     continue;
-                merged[kvp.Key] = kvp.Value ?? string.Empty;
+                merged[kvp.Key] = NormalizeEndpointValue(kvp.Value);
             }
         }
 
         return merged;
+    }
+
+    private static string? NormalizeBaseUrl(string? baseUrl)
+    {
+        var normalized = (baseUrl ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return null;
+
+        return normalized.EndsWith('/') ? normalized : normalized + "/";
+    }
+
+    private static string NormalizeEndpointValue(string? value)
+    {
+        var endpoint = (value ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(endpoint))
+            return string.Empty;
+
+        if (Uri.TryCreate(endpoint, UriKind.Absolute, out var absoluteEndpoint))
+        {
+            return absoluteEndpoint.AbsolutePath.TrimStart('/');
+        }
+
+        return endpoint.TrimStart('/');
     }
 
     private static string BuildConnectionString(string? configured, string contentRoot)

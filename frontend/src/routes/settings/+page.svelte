@@ -259,8 +259,9 @@
 				<Input
 					id="actindo-base-url"
 					bind:value={actindoBaseUrl}
-					placeholder="https://..."
+					placeholder="https://schalke-dev.dev.actindo.com/"
 				/>
+				<p class="text-xs text-gray-500 mt-1">Die URL wird auch automatisch vor alle Actindo Endpoint-Pfade gesetzt.</p>
 				<p class="text-xs text-gray-500 mt-1">Wird für direkte Links zu Produkten in Actindo verwendet.</p>
 			</div>
 		</Card>
@@ -325,11 +326,14 @@
 							id="endpoint-{key}"
 							{value}
 							oninput={(e) => updateEndpoint(key, e.currentTarget.value)}
-							placeholder="https://..."
+							placeholder="Actindo.Modules.Actindo.PIM.Products.create"
 						/>
 					</div>
 				{/each}
 			</div>
+			<p class="text-xs text-gray-500 mt-3">
+				Hier nur den Endpoint-Pfad ohne Domain eintragen. Die Actindo Base URL wird automatisch davorgesetzt.
+			</p>
 		</Card>
 
 		<!-- Lager-Konfiguration -->
