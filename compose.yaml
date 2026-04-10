@@ -1,16 +1,19 @@
+name: s04actindomiddleware-live
+
 services:
-  actindomiddleware:
+  actindomiddleware-live:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: actindomiddleware
+    container_name: actindomiddleware-live
     ports:
       - "2233:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__Dashboard=Data Source=App_Data/dashboard.db
     volumes:
-      - actindo_data:/app/App_Data
-      - ./.actindo-refresh-token:/app/.actindo-refresh-token
+      - actindo_data_live:/app/App_Data
+      - ./.actindo-refresh-token.live:/app/.actindo-refresh-token
     networks:
       - monitoring_default
     restart: unless-stopped
@@ -20,4 +23,5 @@ networks:
     external: true
 
 volumes:
-  actindo_data:
+  actindo_data_live:
+    name: actindo_data_live

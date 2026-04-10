@@ -261,7 +261,8 @@ public sealed class AuthenticationService : IAuthenticationService
             Endpoints = existingSettings.Endpoints,
             NavApiUrl = existingSettings.NavApiUrl,
             NavApiToken = existingSettings.NavApiToken,
-            WarehouseMappings = existingSettings.WarehouseMappings
+            WarehouseMappings = existingSettings.WarehouseMappings,
+            ActindoBaseUrl = existingSettings.ActindoBaseUrl
         };
         await _settingsStore.SaveActindoSettingsAsync(clearedSettings, ct);
     }
@@ -288,7 +289,8 @@ public sealed class AuthenticationService : IAuthenticationService
                     Endpoints = existingSettings.Endpoints,
                     NavApiUrl = existingSettings.NavApiUrl,
                     NavApiToken = existingSettings.NavApiToken,
-                    WarehouseMappings = existingSettings.WarehouseMappings
+                    WarehouseMappings = existingSettings.WarehouseMappings,
+                    ActindoBaseUrl = existingSettings.ActindoBaseUrl
                 };
                 await _settingsStore.SaveActindoSettingsAsync(clearedSettings, CancellationToken.None);
             }
@@ -434,7 +436,8 @@ public sealed class AuthenticationService : IAuthenticationService
             Endpoints = settings.Endpoints,
             NavApiUrl = settings.NavApiUrl,
             NavApiToken = settings.NavApiToken,
-            WarehouseMappings = settings.WarehouseMappings
+            WarehouseMappings = settings.WarehouseMappings,
+            ActindoBaseUrl = settings.ActindoBaseUrl
         };
 
         await _settingsStore.SaveActindoSettingsAsync(settings, cancellationToken);

@@ -28,7 +28,8 @@ usage() {
 # Defaults
 COMPOSE_FILE="compose.yaml"
 ENV_NAME="production"
-VOLUME_NAME="actindo_data"
+VOLUME_NAME="actindo_data_live"
+DB_FILE="dashboard.db"
 DO_PULL=true
 DO_BUILD=true
 
@@ -39,11 +40,14 @@ while [[ $# -gt 0 ]]; do
             COMPOSE_FILE="compose.dev.yaml"
             ENV_NAME="development"
             VOLUME_NAME="actindo_data_dev"
+            DB_FILE="dashboard.dev.db"
             shift
             ;;
         -l|--live)
             COMPOSE_FILE="compose.yaml"
             ENV_NAME="production"
+            VOLUME_NAME="actindo_data_live"
+            DB_FILE="dashboard.db"
             shift
             ;;
         -n|--no-pull)
@@ -77,7 +81,7 @@ echo "============================================"
 echo ""
 
 # Step 0: Migrate App_Data from old bind-mount to named volume (one-time migration)
-OLD_DATA_DIR="./backend/App_Data/dashboard.db"
+OLD_DATA_DIR="./backend/App_Data/$DB_FILE"
 if [[ -f "$OLD_DATA_DIR" ]]; then
     if ! docker volume ls --format '{{.Name}}' | grep -qx "$VOLUME_NAME"; then
         echo "[0/4] Migrating database to Docker named volume '$VOLUME_NAME'..."
@@ -85,7 +89,7 @@ if [[ -f "$OLD_DATA_DIR" ]]; then
         docker run --rm \
             -v "$(pwd)/backend/App_Data":/source \
             -v "${VOLUME_NAME}:/dest" \
-            alpine sh -c "cp /source/dashboard.db /dest/dashboard.db && echo 'Migration done'"
+            alpine sh -c "cp /source/$DB_FILE /dest/$DB_FILE && echo 'Migration done'"
         echo "      Migration complete. Old file kept at $OLD_DATA_DIR as backup."
     fi
 fi
@@ -97,7 +101,7 @@ docker compose -f "$COMPOSE_FILE" down
 # Step 2: Git pull (optional)
 if [[ "$DO_PULL" == true ]]; then
     echo "[2/4] Pulling latest changes..."
-    git fetch && git reset --hard FETCH_HEAD
+    git pull --ff-only
 else
     echo "[2/4] Skipping git pull"
 fi

@@ -25,8 +25,7 @@
 	type Tab = 'products' | 'sync-errors';
 	let activeTab = $state<Tab>('products');
 
-	const DEFAULT_ACTINDO_BASE_URL = 'https://schalke-dev.dev.actindo.com';
-	let actindoBaseUrl = $state(DEFAULT_ACTINDO_BASE_URL);
+	let actindoBaseUrl = $state('');
 
 	// NAV Sync Errors tab
 	let syncErrors = $state<NavSyncErrorsDto | null>(null);
@@ -130,7 +129,8 @@
 			: products
 	);
 
-	function actindoProductUrl(sku: string): string {
+	function actindoProductUrl(sku: string): string | null {
+		if (!actindoBaseUrl.trim()) return null;
 		const base = actindoBaseUrl.replace(/\/$/, '');
 		return `${base}/Actindo.CoreModules.Start.Start.start#/Actindo.Modules.Actindo.PIM.Views.start/products/list/${sku}`;
 	}
@@ -377,7 +377,7 @@
 										{product.sku}
 									</span>
 									<a
-										href={actindoProductUrl(product.sku)}
+										href={actindoProductUrl(product.sku) ?? undefined}
 										target="_blank"
 										rel="noopener noreferrer"
 										onclick={(e) => e.stopPropagation()}
@@ -470,7 +470,7 @@
 												{variant.sku}
 											</span>
 											<a
-												href={actindoProductUrl(variant.sku)}
+												href={actindoProductUrl(variant.sku) ?? undefined}
 												target="_blank"
 												rel="noopener noreferrer"
 												onclick={(e) => e.stopPropagation()}
@@ -610,7 +610,7 @@
 								<div class="flex items-center gap-1.5">
 									<span class="font-mono text-sm font-semibold text-royal-300">{item.sku}</span>
 									<a
-										href={actindoProductUrl(item.sku)}
+										href={actindoProductUrl(item.sku) ?? undefined}
 										target="_blank"
 										rel="noopener noreferrer"
 										onclick={(e) => e.stopPropagation()}
@@ -714,7 +714,7 @@
 											<span class="{variant.status === 'mismatch' ? 'text-amber-700' : 'text-red-700'} mr-1">└</span>
 											<span class="font-mono text-sm text-gray-400">{variant.sku}</span>
 											<a
-												href={actindoProductUrl(variant.sku)}
+												href={actindoProductUrl(variant.sku) ?? undefined}
 												target="_blank"
 												rel="noopener noreferrer"
 												onclick={(e) => e.stopPropagation()}

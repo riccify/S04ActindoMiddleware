@@ -1,18 +1,21 @@
+name: s04actindomiddleware-dev
+
 services:
-  actindomiddleware:
+  actindomiddleware-dev:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: actindomiddleware-dev
     ports:
-      - "2233:8080"
+      - "2234:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__Dashboard=Data Source=App_Data/dashboard.dev.db
       - ASPNETCORE_LOGGING__LOGLEVEL__DEFAULT=Information
       - ASPNETCORE_LOGGING__LOGLEVEL__MICROSOFT=Warning
     volumes:
       - actindo_data_dev:/app/App_Data
-      - ./.actindo-refresh-token:/app/.actindo-refresh-token
+      - ./.actindo-refresh-token.dev:/app/.actindo-refresh-token
     networks:
       - monitoring_default
     restart: unless-stopped
@@ -23,3 +26,4 @@ networks:
 
 volumes:
   actindo_data_dev:
+    name: actindo_data_dev

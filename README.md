@@ -142,6 +142,24 @@ Der Standard-Bearer-Token ist in `appsettings.json` unter `StaticBearer:Token` k
 
 ---
 
+## Docker Compose
+
+```bash
+# Live
+docker compose -f compose.yaml up -d
+
+# Dev
+docker compose -f compose.dev.yaml up -d
+```
+
+- Live lÃ¤uft auf `http://localhost:2233`
+- Dev lÃ¤uft auf `http://localhost:2234`
+- Beide Instanzen haben eigene Docker-Volumes und getrennte SQLite-Datenbanken
+- OAuth-, NAV-, Actindo-Base-URL- und Endpoint-Konfiguration werden pro Instanz in den Settings im Frontend gespeichert
+- Es gibt absichtlich keine fest verdrahteten Live-/Dev-Endpunkte mehr als Fallback im Code
+
+---
+
 ## Datenbank
 
 Die SQLite-Datenbank wird beim ersten Start automatisch angelegt. Bei Schema-Änderungen kann die Datei gelöscht werden — sie wird neu erstellt (Datenverlust beachten).
