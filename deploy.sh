@@ -91,16 +91,18 @@ echo "============================================"
 echo ""
 
 # Step 0: Migrate App_Data from old bind-mount to named volume (one-time migration)
-OLD_DATA_DIR="./backend/App_Data/$DB_FILE"
-if [[ -f "$OLD_DATA_DIR" ]]; then
-    if ! docker volume ls --format '{{.Name}}' | grep -qx "$VOLUME_NAME"; then
-        echo "[0/4] Migrating database to Docker named volume '$VOLUME_NAME'..."
-        docker volume create "$VOLUME_NAME"
-        docker run --rm \
-            -v "$(pwd)/backend/App_Data":/source \
-            -v "${VOLUME_NAME}:/dest" \
-            alpine sh -c "cp /source/$DB_FILE /dest/$DB_FILE && echo 'Migration done'"
-        echo "      Migration complete. Old file kept at $OLD_DATA_DIR as backup."
+if [[ "$CLEAR_DATA" != true ]]; then
+    OLD_DATA_DIR="./backend/App_Data/$DB_FILE"
+    if [[ -f "$OLD_DATA_DIR" ]]; then
+        if ! docker volume ls --format '{{.Name}}' | grep -qx "$VOLUME_NAME"; then
+            echo "[0/4] Migrating database to Docker named volume '$VOLUME_NAME'..."
+            docker volume create "$VOLUME_NAME"
+            docker run --rm \
+                -v "$(pwd)/backend/App_Data":/source \
+                -v "${VOLUME_NAME}:/dest" \
+                alpine sh -c "cp /source/$DB_FILE /dest/$DB_FILE && echo 'Migration done'"
+            echo "      Migration complete. Old file kept at $OLD_DATA_DIR as backup."
+        fi
     fi
 fi
 
@@ -111,7 +113,7 @@ docker compose -f "$COMPOSE_FILE" down
 if [[ "$CLEAR_DATA" == true ]]; then
     echo "[clear] Removing persisted data for $ENV_NAME..."
     docker volume rm -f "$VOLUME_NAME" >/dev/null 2>&1 || true
-    rm -f "$TOKEN_FILE"
+    rm -rf "$TOKEN_FILE"
     touch "$TOKEN_FILE"
 fi
 
