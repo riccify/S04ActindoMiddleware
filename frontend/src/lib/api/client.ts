@@ -15,6 +15,7 @@ import type {
 	Registration,
 	ApproveRegistrationRequest,
 	ActindoSettings,
+	ActindoTokenValidationResponse,
 	ProductSyncStatus,
 	CustomerSyncStatus,
 	NavSyncErrorsDto
@@ -214,6 +215,12 @@ export const settings = {
 	update: (data: ActindoSettings) =>
 		request<void>('/api/settings/actindo', {
 			method: 'PUT',
+			body: JSON.stringify(data)
+		}),
+
+	validateTokens: (data: ActindoSettings) =>
+		request<ActindoTokenValidationResponse>('/api/settings/actindo/validate-tokens', {
+			method: 'POST',
 			body: JSON.stringify(data)
 		}),
 

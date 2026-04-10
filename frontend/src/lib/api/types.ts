@@ -164,6 +164,16 @@ export interface ActindoSettings {
 	actindoBaseUrl: string | null;
 }
 
+export interface TokenValidationResult {
+	valid: boolean;
+	message: string;
+}
+
+export interface ActindoTokenValidationResponse {
+	accessToken: TokenValidationResult;
+	refreshToken: TokenValidationResult;
+}
+
 // NAV Sync Error Types
 export interface NavSyncMissingVariant {
 	sku: string;

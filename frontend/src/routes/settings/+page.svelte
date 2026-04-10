@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { Save, RefreshCw, Trash2, Settings as SettingsIcon, Key, Link, Globe, Warehouse, Plus, X } from 'lucide-svelte';
 	import { settings as settingsApi } from '$api/client';
-	import type { ActindoSettings } from '$api/types';
+	import type { ActindoSettings, ActindoTokenValidationResponse } from '$api/types';
 	import { permissions } from '$stores/auth';
 	import { formatDate } from '$utils/format';
 	import PageHeader from '$components/layout/PageHeader.svelte';
@@ -21,6 +21,8 @@
 	let saving = $state(false);
 	let error = $state('');
 	let success = $state('');
+	let tokenCheckLoading = $state(false);
+	let tokenCheckResult = $state<ActindoTokenValidationResponse | null>(null);
 
 	// Form fields
 	let clientId = $state('');
@@ -92,6 +94,33 @@
 			error = err instanceof Error ? err.message : 'Fehler beim Speichern';
 		} finally {
 			saving = false;
+		}
+	}
+
+	async function handleValidateTokens() {
+		tokenCheckLoading = true;
+		error = '';
+		success = '';
+		tokenCheckResult = null;
+
+		try {
+			tokenCheckResult = await settingsApi.validateTokens({
+				clientId: clientId || null,
+				clientSecret: clientSecret || null,
+				tokenEndpoint: tokenEndpoint || null,
+				accessToken: accessToken || null,
+				accessTokenExpiresAt: settings?.accessTokenExpiresAt ?? null,
+				refreshToken: refreshToken || null,
+				endpoints,
+				navApiUrl: navApiUrl || null,
+				navApiToken: navApiToken || null,
+				actindoBaseUrl: actindoBaseUrl.trim() || null,
+				warehouseMappings
+			});
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Fehler beim Pruefen der Tokens';
+		} finally {
+			tokenCheckLoading = false;
 		}
 	}
 
@@ -245,6 +274,37 @@
 						placeholder="Refresh Token..."
 					/>
 				</div>
+
+				<div class="flex justify-end">
+					<Button variant="ghost" onclick={handleValidateTokens} disabled={tokenCheckLoading}>
+						<RefreshCw size={16} class={tokenCheckLoading ? 'animate-spin' : ''} />
+						{tokenCheckLoading ? 'Pruefe...' : 'Tokens pruefen'}
+					</Button>
+				</div>
+
+				{#if tokenCheckResult}
+					<div class="space-y-3">
+						<div class="p-4 rounded-xl bg-black/20 border border-white/10">
+							<div class="flex items-center justify-between mb-1">
+								<span class="text-sm text-gray-400">Access Token Check</span>
+								<Badge variant={tokenCheckResult.accessToken.valid ? 'success' : 'error'}>
+									{tokenCheckResult.accessToken.valid ? 'Gueltig' : 'Ungueltig'}
+								</Badge>
+							</div>
+							<p class="text-sm text-gray-300">{tokenCheckResult.accessToken.message}</p>
+						</div>
+
+						<div class="p-4 rounded-xl bg-black/20 border border-white/10">
+							<div class="flex items-center justify-between mb-1">
+								<span class="text-sm text-gray-400">Refresh Token Check</span>
+								<Badge variant={tokenCheckResult.refreshToken.valid ? 'success' : 'error'}>
+									{tokenCheckResult.refreshToken.valid ? 'Gueltig' : 'Ungueltig'}
+								</Badge>
+							</div>
+							<p class="text-sm text-gray-300">{tokenCheckResult.refreshToken.message}</p>
+						</div>
+					</div>
+				{/if}
 			</div>
 		</Card>
 

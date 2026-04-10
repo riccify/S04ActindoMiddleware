@@ -14,6 +14,7 @@ usage() {
     echo "Options:"
     echo "  -d, --dev       Use development configuration"
     echo "  -l, --live      Use production configuration (default)"
+    echo "  -c, --clear     Delete all persisted data for the selected instance"
     echo "  -n, --no-pull   Skip git pull"
     echo "  -r, --restart   Only restart (no rebuild)"
     echo "  -h, --help      Show this help"
@@ -21,6 +22,7 @@ usage() {
     echo "Examples:"
     echo "  $0              # Deploy production (pull + build + up)"
     echo "  $0 --dev        # Deploy development"
+    echo "  $0 --dev --clear # Reset dev database/settings and redeploy"
     echo "  $0 --restart    # Restart without rebuilding"
     exit 1
 }
@@ -30,8 +32,10 @@ COMPOSE_FILE="compose.yaml"
 ENV_NAME="production"
 VOLUME_NAME="actindo_data_live"
 DB_FILE="dashboard.db"
+TOKEN_FILE=".actindo-refresh-token.live"
 DO_PULL=true
 DO_BUILD=true
+CLEAR_DATA=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -41,6 +45,7 @@ while [[ $# -gt 0 ]]; do
             ENV_NAME="development"
             VOLUME_NAME="actindo_data_dev"
             DB_FILE="dashboard.dev.db"
+            TOKEN_FILE=".actindo-refresh-token.dev"
             shift
             ;;
         -l|--live)
@@ -48,6 +53,11 @@ while [[ $# -gt 0 ]]; do
             ENV_NAME="production"
             VOLUME_NAME="actindo_data_live"
             DB_FILE="dashboard.db"
+            TOKEN_FILE=".actindo-refresh-token.live"
+            shift
+            ;;
+        -c|--clear|-clear)
+            CLEAR_DATA=true
             shift
             ;;
         -n|--no-pull)
@@ -97,6 +107,13 @@ fi
 # Step 1: Stop containers
 echo "[1/4] Stopping containers..."
 docker compose -f "$COMPOSE_FILE" down
+
+if [[ "$CLEAR_DATA" == true ]]; then
+    echo "[clear] Removing persisted data for $ENV_NAME..."
+    docker volume rm -f "$VOLUME_NAME" >/dev/null 2>&1 || true
+    rm -f "$TOKEN_FILE"
+    touch "$TOKEN_FILE"
+fi
 
 # Step 2: Git pull (optional)
 if [[ "$DO_PULL" == true ]]; then
