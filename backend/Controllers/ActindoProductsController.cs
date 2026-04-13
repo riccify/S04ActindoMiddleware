@@ -269,6 +269,50 @@ public sealed class ActindoProductsController : ControllerBase
         return null;
     }
 
+    private static ProductPriceUpdateItem? ExtractPriceUpdate(JsonObject productNode, int? actindoProductIdOverride = null, string? skuOverride = null)
+    {
+        var data = ExtractPriceData(JsonSerializer.SerializeToElement(productNode));
+        if (data.price is null && data.priceEmployee is null && data.priceMember is null)
+            return null;
+
+        return new ProductPriceUpdateItem
+        {
+            ActindoProductId = actindoProductIdOverride ?? data.actindoId,
+            Sku = skuOverride ?? data.sku,
+            Price = data.price,
+            PriceEmployee = data.priceEmployee,
+            PriceMember = data.priceMember
+        };
+    }
+
+    private async Task PersistProductPriceUpdatesAsync(
+        IEnumerable<ProductPriceUpdateItem> updates,
+        CancellationToken cancellationToken)
+    {
+        foreach (var update in updates)
+        {
+            if (update.ActindoProductId.HasValue)
+            {
+                await _dashboardMetrics.UpdateProductPriceByActindoIdAsync(
+                    update.ActindoProductId.Value,
+                    update.Price,
+                    update.PriceEmployee,
+                    update.PriceMember,
+                    cancellationToken);
+            }
+
+            if (!string.IsNullOrWhiteSpace(update.Sku))
+            {
+                await _dashboardMetrics.UpdateProductPriceAsync(
+                    update.Sku,
+                    update.Price,
+                    update.PriceEmployee,
+                    update.PriceMember,
+                    cancellationToken);
+            }
+        }
+    }
+
     /// <summary>
     /// Aktualisiert ein bestehendes Produkt und seine Varianten in Actindo.
     /// </summary>
@@ -657,6 +701,8 @@ public sealed class ActindoProductsController : ControllerBase
                     variant.ProductId, "child", masterSku, vNode?["_pim_varcode"]?.ToString(), cancellationToken);
             }
 
+            await PersistProductPriceUpdatesAsync(results.PriceUpdates, cancellationToken);
+
             return Ok(results);
         }
         finally
@@ -711,6 +757,9 @@ public sealed class ActindoProductsController : ControllerBase
         results.MasterProductId = masterProductId;
         results.MasterSku = masterSku;
         results.MasterOperation = hasId ? "saved" : "created";
+        var masterPriceUpdate = ExtractPriceUpdate(productObj, masterProductId, masterSku);
+        if (masterPriceUpdate is not null)
+            results.PriceUpdates.Add(masterPriceUpdate);
 
         // Step 2: Process variants sequentially: create/save → changeVariantMaster
         if (variantsNode is JsonArray variantsArray && variantsArray.Count > 0)
@@ -773,6 +822,10 @@ public sealed class ActindoProductsController : ControllerBase
                         Operation = variantHasId ? "saved" : "created",
                         Success = true
                     });
+
+                    var variantPriceUpdate = ExtractPriceUpdate(variantObj, variantProductId, variantSku);
+                    if (variantPriceUpdate is not null)
+                        results.PriceUpdates.Add(variantPriceUpdate);
                 }
                 catch (Exception ex)
                 {
@@ -1022,6 +1075,7 @@ public sealed class ActindoProductsController : ControllerBase
                             Guid.NewGuid(), variant.Sku, GetNameFromJsonNode(vNode),
                             variant.ProductId, "child", masterSku, vNode?["_pim_varcode"]?.ToString(), ct);
                     }
+                    await PersistProductPriceUpdatesAsync(results.PriceUpdates, ct);
                     await _navCallback.SendCallbackAsync(masterSku, capturedBufferId, results, created: results.MasterOperation == "created", ct);
                 }
                 catch (Exception ex)
@@ -1062,9 +1116,19 @@ public sealed class FullProductSyncResult
     public string MasterSku { get; set; } = string.Empty;
     public string MasterOperation { get; set; } = string.Empty;
     public List<VariantSyncResultItem> Variants { get; set; } = new();
+    public List<ProductPriceUpdateItem> PriceUpdates { get; set; } = new();
     public ConcurrentBag<InventoryUpdateResultItem> InventoryUpdates { get; set; } = new();
     public bool Success => Variants.All(v => v.Success) &&
                            InventoryUpdates.All(i => i.Success);
+}
+
+public sealed class ProductPriceUpdateItem
+{
+    public int? ActindoProductId { get; set; }
+    public string? Sku { get; set; }
+    public decimal? Price { get; set; }
+    public decimal? PriceEmployee { get; set; }
+    public decimal? PriceMember { get; set; }
 }
 
 public sealed class VariantSyncResultItem

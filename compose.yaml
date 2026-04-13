@@ -11,6 +11,17 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ConnectionStrings__Dashboard=Data Source=App_Data/dashboard.db
+      - Logging__LogLevel__Default=Debug
+      - Logging__LogLevel__Microsoft=Information
+      - Logging__LogLevel__Microsoft.AspNetCore=Information
+      - Logging__LogLevel__Microsoft.AspNetCore.Mvc=Debug
+      - Logging__LogLevel__ModelValidation=Debug
+      - Logging__LogLevel__RequestLogging=Debug
+      - Logging__LogLevel__ActindoMiddleware=Debug
+      - Logging__LogLevel__ActindoMiddleware.Application.Services.ProductImageService=Debug
+      - Logging__LogLevel__ActindoMiddleware.Infrastructure.Nav.NavCallbackService=Debug
+      - Logging__LogLevel__ActindoMiddleware.Infrastructure.Nav.NavClient=Debug
+      - Logging__LogLevel__ActindoMiddleware.Infrastructure.Actindo.ActindoClient=Debug
     volumes:
       - actindo_data_live:/app/App_Data
       - ./.actindo-refresh-token.live:/app/.actindo-refresh-token

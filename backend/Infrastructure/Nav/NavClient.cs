@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using ActindoMiddleware.Application.Configuration;
+using ActindoMiddleware.Application.Services;
 using Microsoft.Extensions.Logging;
 
 namespace ActindoMiddleware.Infrastructure.Nav;
@@ -10,16 +11,19 @@ public sealed class NavClient : INavClient
 {
     private readonly HttpClient _httpClient;
     private readonly ISettingsStore _settingsStore;
+    private readonly ProductJobQueue _productJobQueue;
     private readonly ILogger<NavClient> _logger;
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
     public NavClient(
         HttpClient httpClient,
         ISettingsStore settingsStore,
+        ProductJobQueue productJobQueue,
         ILogger<NavClient> logger)
     {
         _httpClient = httpClient;
         _settingsStore = settingsStore;
+        _productJobQueue = productJobQueue;
         _logger = logger;
     }
 
@@ -205,7 +209,14 @@ public sealed class NavClient : INavClient
             throw new InvalidOperationException("NAV API Token is not configured");
 
         var serializedPayload = JsonSerializer.Serialize(payload, SerializerOptions);
-        _logger.LogInformation("NAV API POST: {Payload}", serializedPayload);
+        var tokenPreview = settings.NavApiToken.Length > 8
+            ? settings.NavApiToken[..8] + "..."
+            : "(short)";
+        _logger.LogInformation(
+            "NAV API POST {Url} | Token starts with: {TokenPreview} | Payload: {Payload}",
+            settings.NavApiUrl,
+            tokenPreview,
+            serializedPayload);
 
         _httpClient.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", settings.NavApiToken);
@@ -232,14 +243,21 @@ public sealed class NavClient : INavClient
                 var errorMsg = root.TryGetProperty("error", out var errProp)
                     ? errProp.GetString()
                     : null;
+                _logger.LogWarning(
+                    "NAV API returned success=false for {Url}. Error={Error}",
+                    settings.NavApiUrl,
+                    errorMsg ?? "(none)");
+                AppendJobLog(settings.NavApiUrl, false, errorMsg ?? "NAV API meldet Fehler (success: false)", serializedPayload, responseContent);
                 throw new InvalidOperationException(
                     string.IsNullOrWhiteSpace(errorMsg) ? "NAV API meldet Fehler (success: false)" : errorMsg);
             }
 
+            AppendJobLog(settings.NavApiUrl, true, requestPayload: serializedPayload, responsePayload: responseContent);
             return root;
         }
         catch (Exception ex)
         {
+            AppendJobLog("(nav-api)", false, ex.Message, serializedPayload);
             _logger.LogError(ex, "NAV API request failed");
             throw;
         }
@@ -256,5 +274,12 @@ public sealed class NavClient : INavClient
             JsonValueKind.Number => prop.GetRawText(),
             _ => null
         };
+    }
+
+    private void AppendJobLog(string endpoint, bool success, string? error = null, string? requestPayload = null, string? responsePayload = null)
+    {
+        var jobId = ProductJobQueue.CurrentJobId;
+        if (jobId.HasValue)
+            _productJobQueue.AddLog(jobId.Value, endpoint, success, error, requestPayload, responsePayload);
     }
 }

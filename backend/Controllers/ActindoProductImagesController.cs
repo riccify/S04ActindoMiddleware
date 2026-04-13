@@ -4,6 +4,7 @@ using ActindoMiddleware.DTOs.Requests;
 using ActindoMiddleware.DTOs.Responses;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 
 namespace ActindoMiddleware.Controllers;
 
@@ -13,11 +14,14 @@ namespace ActindoMiddleware.Controllers;
 public sealed class ActindoProductImagesController : ControllerBase
 {
     private readonly ProductImageService _productImageService;
+    private readonly ProductJobQueue _jobQueue;
 
     public ActindoProductImagesController(
-        ProductImageService productImageService)
+        ProductImageService productImageService,
+        ProductJobQueue jobQueue)
     {
         _productImageService = productImageService;
+        _jobQueue = jobQueue;
     }
 
     [HttpPost]
@@ -32,8 +36,25 @@ public sealed class ActindoProductImagesController : ControllerBase
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
         var cancellationToken = cts.Token;
+        var syncJobId = Guid.NewGuid();
+        var success = false;
+        string? syncJobError = null;
 
-        var response = await _productImageService.UploadAsync(request, cancellationToken);
-        return Created(string.Empty, response);
+        _jobQueue.RegisterSyncJob(syncJobId, $"product-image:{request.Id}", "image-upload", JsonSerializer.Serialize(request));
+        try
+        {
+            var response = await _productImageService.UploadAsync(request, cancellationToken);
+            success = true;
+            return Created(string.Empty, response);
+        }
+        catch (Exception ex)
+        {
+            syncJobError = ex.Message;
+            throw;
+        }
+        finally
+        {
+            _jobQueue.CompleteSyncJob(syncJobId, success, syncJobError);
+        }
     }
 }

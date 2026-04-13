@@ -32,10 +32,24 @@ public sealed class ProductImageService
         ArgumentNullException.ThrowIfNull(request.Paths);
 
         var endpoints = await _endpoints.GetAsync(cancellationToken);
+        _logger.LogInformation(
+            "Starting product image upload for ProductId={ProductId} with {ImageCount} images and {PathCount} relation paths. CreateFile={CreateFileEndpoint}, ProductFilesSave={ProductFilesSaveEndpoint}",
+            request.Id,
+            request.Images.Count,
+            request.Paths.Count,
+            endpoints.CreateFile,
+            endpoints.ProductFilesSave);
 
         foreach (var image in request.Images)
         {
-            _logger.LogInformation("Uploading product image {Path}", image.Path);
+            _logger.LogInformation(
+                "Uploading product image for ProductId={ProductId}: Path={Path}, Type={Type}, RenameOnExistingFile={RenameOnExistingFile}, CreateDirectoryStructure={CreateDirectoryStructure}, ContentLength={ContentLength}",
+                request.Id,
+                image.Path,
+                image.Type,
+                image.RenameOnExistingFile,
+                image.CreateDirectoryStructure,
+                image.Content?.Length ?? 0);
 
             await _client.PostAsync(
                 endpoints.CreateFile,
@@ -49,12 +63,21 @@ public sealed class ProductImageService
                 },
                 cancellationToken);
 
+            _logger.LogDebug(
+                "CreateFile finished for ProductId={ProductId}: Path={Path}",
+                request.Id,
+                image.Path);
+
             await Task.Delay(100, cancellationToken);
         }
 
         if (request.Paths.Count > 0)
         {
-            _logger.LogInformation("Relating {Count} images to product {ProductId}", request.Paths.Count, request.Id);
+            _logger.LogInformation(
+                "Relating {Count} images to product {ProductId}: ImageIds={ImageIds}",
+                request.Paths.Count,
+                request.Id,
+                string.Join(", ", request.Paths.Select(path => path.Id)));
 
             await _client.PostAsync(
                 endpoints.ProductFilesSave,
@@ -70,7 +93,13 @@ public sealed class ProductImageService
                     }
                 },
                 cancellationToken);
+
+            _logger.LogDebug(
+                "ProductFilesSave finished for ProductId={ProductId}",
+                request.Id);
         }
+
+        _logger.LogInformation("Completed product image upload for ProductId={ProductId}", request.Id);
 
         return new CreateProductResponse
         {
