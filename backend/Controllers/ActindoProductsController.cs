@@ -156,9 +156,10 @@ public sealed class ActindoProductsController : ControllerBase
                 {
                     var variantDto = product.Variants?.FirstOrDefault(v => v.sku == variantResult.Sku);
                     var variantName = variantDto != null ? GetProductName(variantDto) : string.Empty;
+                    var isIndi = IsIndiVariantCode(variantDto?._pim_varcode);
                     await _dashboardMetrics.SaveProductAsync(
                         Guid.NewGuid(), variantResult.Sku, variantName,
-                        variantResult.Id, "child", product.sku, variantDto?._pim_varcode, cancellationToken);
+                        variantResult.Id, isIndi ? "single" : "child", isIndi ? null : product.sku, variantDto?._pim_varcode, cancellationToken);
                 }
             }
 
@@ -298,6 +299,10 @@ public sealed class ActindoProductsController : ControllerBase
         return ExtractPriceData(body).sku;
     }
 
+    private static bool IsIndiVariantCode(string? variantCode) =>
+        !string.IsNullOrWhiteSpace(variantCode) &&
+        variantCode.Contains("INDI", StringComparison.OrdinalIgnoreCase);
+
     private static ProductPriceUpdateItem? ExtractPriceUpdate(JsonObject productNode, int? actindoProductIdOverride = null, string? skuOverride = null)
     {
         var data = ExtractPriceData(JsonSerializer.SerializeToElement(productNode));
@@ -387,10 +392,11 @@ public sealed class ActindoProductsController : ControllerBase
                 foreach (var variantResult in result.Variants)
                 {
                     var variantDto = product2.Variants?.FirstOrDefault(v => v.sku == variantResult.Sku);
+                    var isIndi = IsIndiVariantCode(variantDto?._pim_varcode);
                     await _dashboardMetrics.SaveProductAsync(
                         Guid.NewGuid(), variantResult.Sku,
                         variantDto != null ? GetProductName(variantDto) : string.Empty,
-                        variantResult.Id, "child", product2.sku, variantDto?._pim_varcode, cancellationToken);
+                        variantResult.Id, isIndi ? "single" : "child", isIndi ? null : product2.sku, variantDto?._pim_varcode, cancellationToken);
                 }
             }
 
@@ -713,9 +719,10 @@ public sealed class ActindoProductsController : ControllerBase
             foreach (var variant in results.Variants.Where(v => v.Success))
             {
                 variantNodes2.TryGetValue(variant.Sku, out var vNode);
+                var isIndi = IsIndiVariantCode(vNode?["_pim_varcode"]?.ToString());
                 await _dashboardMetrics.SaveProductAsync(
                     Guid.NewGuid(), variant.Sku, GetNameFromJsonNode(vNode),
-                    variant.ProductId, "child", masterSku, vNode?["_pim_varcode"]?.ToString(), cancellationToken);
+                    variant.ProductId, isIndi ? "single" : "child", isIndi ? null : masterSku, vNode?["_pim_varcode"]?.ToString(), cancellationToken);
             }
 
             await PersistProductPriceUpdatesAsync(results.PriceUpdates, cancellationToken);
@@ -821,8 +828,9 @@ public sealed class ActindoProductsController : ControllerBase
                         throw new InvalidOperationException($"Actindo did not return variant product ID for {variantSku}");
                     }
 
-                    // Only link variant to master on create, not on save (relationship already exists)
-                    if (!variantHasId)
+                    // Only link real variants to master on create, not on save.
+                    // INDI products are standalone single products and must not be linked as variants.
+                    if (!variantHasId && !isIndi)
                     {
                         var relationPayload = new
                         {
@@ -999,10 +1007,11 @@ public sealed class ActindoProductsController : ControllerBase
                         foreach (var variantResult in result.Variants)
                         {
                             var variantDto = product.Variants?.FirstOrDefault(v => v.sku == variantResult.Sku);
+                            var isIndi = IsIndiVariantCode(variantDto?._pim_varcode);
                             await _dashboardMetrics.SaveProductAsync(
                                 Guid.NewGuid(), variantResult.Sku,
                                 variantDto != null ? GetProductName(variantDto) : string.Empty,
-                                variantResult.Id, "child", product.sku, variantDto?._pim_varcode, ct);
+                                variantResult.Id, isIndi ? "single" : "child", isIndi ? null : product.sku, variantDto?._pim_varcode, ct);
                         }
                     }
                     await _navCallback.SendCallbackAsync(sku, capturedRequest.BufferId, ToNavCallbackPayload(sku, result, created: true), created: true, ct);
@@ -1043,10 +1052,11 @@ public sealed class ActindoProductsController : ControllerBase
                         foreach (var variantResult in result.Variants)
                         {
                             var variantDto = product.Variants?.FirstOrDefault(v => v.sku == variantResult.Sku);
+                            var isIndi = IsIndiVariantCode(variantDto?._pim_varcode);
                             await _dashboardMetrics.SaveProductAsync(
                                 Guid.NewGuid(), variantResult.Sku,
                                 variantDto != null ? GetProductName(variantDto) : string.Empty,
-                                variantResult.Id, "child", product.sku, variantDto?._pim_varcode, ct);
+                                variantResult.Id, isIndi ? "single" : "child", isIndi ? null : product.sku, variantDto?._pim_varcode, ct);
                         }
                     }
                     await _navCallback.SendCallbackAsync(sku, capturedRequest.BufferId, ToNavCallbackPayload(sku, result, created: false), created: false, ct);
@@ -1088,9 +1098,10 @@ public sealed class ActindoProductsController : ControllerBase
                     foreach (var variant in results.Variants.Where(v => v.Success))
                     {
                         variantNodes.TryGetValue(variant.Sku, out var vNode);
+                        var isIndi = IsIndiVariantCode(vNode?["_pim_varcode"]?.ToString());
                         await _dashboardMetrics.SaveProductAsync(
                             Guid.NewGuid(), variant.Sku, GetNameFromJsonNode(vNode),
-                            variant.ProductId, "child", masterSku, vNode?["_pim_varcode"]?.ToString(), ct);
+                            variant.ProductId, isIndi ? "single" : "child", isIndi ? null : masterSku, vNode?["_pim_varcode"]?.ToString(), ct);
                     }
                     await PersistProductPriceUpdatesAsync(results.PriceUpdates, ct);
                     await _navCallback.SendCallbackAsync(masterSku, capturedBufferId, results, created: results.MasterOperation == "created", ct);

@@ -337,7 +337,6 @@ public abstract class ProductSynchronizationService
         bool isNew,
         CancellationToken cancellationToken)
     {
-        var endpoints = await ResolveEndpointsAsync(cancellationToken);
         var masterSku = $"{masterProduct.sku}-INDI";
 
         var indiMasterPayload = new { product = BuildIndiMasterPayload(masterProduct, variant, masterSku) };
@@ -353,21 +352,6 @@ public abstract class ProductSynchronizationService
             "INDI product synced for SKU {Sku} with ID {Id}",
             masterSku,
             indiMasterId);
-
-        if (isNew)
-        {
-            var relationPayload = new
-            {
-                variantProduct = new { id = indiMasterId },
-                parentProduct = new { id = masterProductId }
-            };
-            LogEndpointPayload(endpoints.CreateRelation, relationPayload);
-            await _client.PostAsync(endpoints.CreateRelation, relationPayload, cancellationToken);
-            _logger.LogInformation(
-                "INDI product {Sku} linked to master {MasterId}",
-                masterSku,
-                masterProductId);
-        }
 
         return new VariantCreationResult(masterSku, indiMasterId);
     }
