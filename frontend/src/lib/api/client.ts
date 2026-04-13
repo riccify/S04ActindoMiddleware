@@ -16,6 +16,7 @@ import type {
 	ApproveRegistrationRequest,
 	ActindoSettings,
 	ActindoTokenValidationResponse,
+	NavApiValidationResponse,
 	ProductSyncStatus,
 	CustomerSyncStatus,
 	NavSyncErrorsDto
@@ -220,6 +221,12 @@ export const settings = {
 
 	validateTokens: (data: ActindoSettings) =>
 		request<ActindoTokenValidationResponse>('/api/settings/actindo/validate-tokens', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		}),
+
+	validateNavApi: (data: ActindoSettings) =>
+		request<NavApiValidationResponse>('/api/settings/actindo/validate-nav', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		}),

@@ -269,6 +269,35 @@ public sealed class ActindoProductsController : ControllerBase
         return null;
     }
 
+    private static string? ExtractPriceJobSkuSummary(JsonElement body)
+    {
+        if (body.TryGetProperty("variant_prices", out var variantPrices) &&
+            variantPrices.ValueKind == JsonValueKind.Array &&
+            variantPrices.GetArrayLength() > 0)
+        {
+            var count = variantPrices.GetArrayLength();
+            string? firstSku = null;
+            foreach (var variant in variantPrices.EnumerateArray())
+            {
+                firstSku = ExtractPriceData(variant).sku;
+                if (!string.IsNullOrWhiteSpace(firstSku))
+                    break;
+            }
+
+            firstSku ??= "Preis";
+            return count == 1 ? firstSku : $"{firstSku} +{count - 1}";
+        }
+
+        if (body.TryGetProperty("product", out var product))
+        {
+            var nestedSku = ExtractPriceData(product).sku;
+            if (!string.IsNullOrWhiteSpace(nestedSku))
+                return nestedSku;
+        }
+
+        return ExtractPriceData(body).sku;
+    }
+
     private static ProductPriceUpdateItem? ExtractPriceUpdate(JsonObject productNode, int? actindoProductIdOverride = null, string? skuOverride = null)
     {
         var data = ExtractPriceData(JsonSerializer.SerializeToElement(productNode));
@@ -526,19 +555,7 @@ public sealed class ActindoProductsController : ControllerBase
         var success = false;
         string? priceSyncJobError = null;
 
-        string priceSkuSummary;
-        if (body.TryGetProperty("variant_prices", out var vpForSku) &&
-            vpForSku.ValueKind == JsonValueKind.Array &&
-            vpForSku.GetArrayLength() > 0)
-        {
-            var count = vpForSku.GetArrayLength();
-            var firstSku = ExtractPriceData(vpForSku[0]).sku ?? "Preis";
-            priceSkuSummary = count == 1 ? firstSku : $"{firstSku} +{count - 1}";
-        }
-        else
-        {
-            priceSkuSummary = ExtractPriceData(body).sku ?? "Preis";
-        }
+        var priceSkuSummary = ExtractPriceJobSkuSummary(body) ?? "Preis";
         _jobQueue.RegisterSyncJob(priceSyncJobId, priceSkuSummary, "price", JsonSerializer.Serialize(body));
 
         try

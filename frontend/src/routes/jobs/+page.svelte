@@ -132,12 +132,43 @@
 		| { type: 'variant'; sku: string; actindoId: string | null }
 		| { type: 'relation'; variantId: string; parentId: string }
 		| { type: 'inventory'; sku: string; warehouseId: string | null }
+		| { type: 'image-file'; productRef: string; path: string | null }
+		| { type: 'image-link'; productRef: string; imageIds: string[] }
+		| { type: 'nav'; requestType: string; productRef: string | null; navId: string | null; actindoId: string | null }
 		| { type: 'unknown' };
 
-	function parseLogEntryMeta(entry: ProductJobLogEntry, jobSku: string): LogEntryMeta {
+	function extractProductRefFromJob(job: ProductJobInfo): string | null {
+		if (job.operation === 'image-upload' && job.sku.startsWith('product-image:')) {
+			return `Produkt #${job.sku.slice('product-image:'.length)}`;
+		}
+		return job.sku || null;
+	}
+
+	function parseLogEntryMeta(entry: ProductJobLogEntry, job: ProductJobInfo): LogEntryMeta {
 		try {
 			const req = entry.requestPayload ? JSON.parse(entry.requestPayload) : null;
 			const res = entry.responsePayload ? JSON.parse(entry.responsePayload) : null;
+			const jobSku = job.sku;
+			const productRef = extractProductRefFromJob(job);
+
+			if (req?.requestType !== undefined) {
+				const requestType = String(req.requestType);
+				const navId =
+					req?.customer?.nav_id != null ? String(req.customer.nav_id) :
+					req?.products?.[0]?.nav_id != null ? String(req.products[0].nav_id) :
+					req?.nav_id != null ? String(req.nav_id) :
+					null;
+				const actindoId =
+					req?.customer?.actindo_id != null ? String(req.customer.actindo_id) :
+					req?.products?.[0]?.actindo_id != null ? String(req.products[0].actindo_id) :
+					req?.actindo_id != null ? String(req.actindo_id) :
+					null;
+				const navProductRef =
+					req?.sku != null ? String(req.sku) :
+					req?.products?.[0]?.nav_id != null ? String(req.products[0].nav_id) :
+					productRef;
+				return { type: 'nav', requestType, productRef: navProductRef, navId, actindoId };
+			}
 
 			if (req?.product?.sku !== undefined) {
 				const sku: string = req.product.sku;
@@ -164,6 +195,26 @@
 					type: 'inventory',
 					sku: req.inventory.sku,
 					warehouseId: warehouseId != null ? String(warehouseId) : null
+				};
+			}
+
+			if (req?.path !== undefined || entry.endpoint.includes('CreateFile')) {
+				return {
+					type: 'image-file',
+					productRef: productRef ?? 'Produktbild',
+					path: req?.path != null ? String(req.path) : null
+				};
+			}
+
+			if (req?.product?.id !== undefined && req?.product?._pim_images?.images !== undefined) {
+				return {
+					type: 'image-link',
+					productRef: `Produkt #${String(req.product.id)}`,
+					imageIds: Array.isArray(req.product._pim_images.images)
+						? req.product._pim_images.images
+								.map((image: { id?: unknown }) => image?.id != null ? String(image.id) : null)
+								.filter((id: string | null): id is string => !!id)
+						: []
 				};
 			}
 		} catch {
@@ -265,6 +316,9 @@
 		if (op === 'full') return 'Full Sync';
 		if (op === 'inventory') return 'Bestand';
 		if (op === 'price') return 'Preis';
+		if (op === 'image-upload') return 'Bilder';
+		if (op === 'customer-create') return 'Debitor anlegen';
+		if (op === 'customer-save') return 'Debitor speichern';
 		return op;
 	}
 
@@ -594,7 +648,7 @@
 														</div>
 
 														{#each jobLogs as entry}
-															{@const meta = parseLogEntryMeta(entry, job.sku)}
+															{@const meta = parseLogEntryMeta(entry, job)}
 															<!-- svelte-ignore a11y_click_events_have_key_events a11y_interactive_supports_focus -->
 															<div
 																class="grid gap-x-3 items-center group cursor-pointer rounded-md px-2 py-1.5 -mx-2 hover:bg-white/5 transition-colors"
@@ -636,6 +690,18 @@
 																		<span class="inline-flex text-[10px] font-semibold px-1.5 py-0.5 rounded bg-yellow-900/40 text-yellow-300 border border-yellow-500/20 whitespace-nowrap">
 																			Bestand
 																		</span>
+																	{:else if meta.type === 'image-file'}
+																		<span class="inline-flex text-[10px] font-semibold px-1.5 py-0.5 rounded bg-cyan-900/40 text-cyan-300 border border-cyan-500/20 whitespace-nowrap">
+																			Bild
+																		</span>
+																	{:else if meta.type === 'image-link'}
+																		<span class="inline-flex text-[10px] font-semibold px-1.5 py-0.5 rounded bg-sky-900/40 text-sky-300 border border-sky-500/20 whitespace-nowrap">
+																			Bild-Link
+																		</span>
+																	{:else if meta.type === 'nav'}
+																		<span class="inline-flex text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-900/40 text-emerald-300 border border-emerald-500/20 whitespace-nowrap">
+																			NAV
+																		</span>
 																	{/if}
 																</div>
 
@@ -656,6 +722,29 @@
 																		</span>
 																	{:else if meta.type === 'inventory'}
 																		<span class="font-mono text-[11px] text-white/80 truncate block">{meta.sku}</span>
+																	{:else if meta.type === 'image-file'}
+																		<span class="font-mono text-[11px] text-white/80 truncate block" title={meta.productRef}>
+																			{meta.productRef}
+																		</span>
+																		{#if meta.path}
+																			<span class="text-[10px] text-cyan-300/70 truncate block" title={meta.path}>
+																				{meta.path}
+																			</span>
+																		{/if}
+																	{:else if meta.type === 'image-link'}
+																		<span class="font-mono text-[11px] text-white/80 truncate block">{meta.productRef}</span>
+																		{#if meta.imageIds.length > 0}
+																			<span class="text-[10px] text-sky-300/70 truncate block" title={meta.imageIds.join(', ')}>
+																				{meta.imageIds.length} Bild-ID{meta.imageIds.length === 1 ? '' : 's'}
+																			</span>
+																		{/if}
+																	{:else if meta.type === 'nav'}
+																		<span class="font-mono text-[11px] text-white/80 truncate block" title={meta.productRef ?? meta.requestType}>
+																			{meta.productRef ?? 'NAV'}
+																		</span>
+																		<span class="text-[10px] text-emerald-300/70 truncate block" title={meta.requestType}>
+																			{meta.requestType}
+																		</span>
 																	{/if}
 																	{#if entry.error && (meta.type === 'unknown')}
 																		<span class="text-red-400/80 text-[11px] truncate block" title={entry.error}>{entry.error}</span>
@@ -671,6 +760,10 @@
 																	{:else if meta.type === 'inventory' && meta.warehouseId}
 																		<span class="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-gray-500 font-mono border border-white/5 whitespace-nowrap">
 																			{meta.warehouseId}
+																		</span>
+																	{:else if meta.type === 'nav' && (meta.actindoId || meta.navId)}
+																		<span class="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-emerald-300/80 font-mono border border-white/5 whitespace-nowrap" title={meta.navId ? `NAV: ${meta.navId}` : undefined}>
+																			{meta.actindoId ?? meta.navId}
 																		</span>
 																	{:else if entry.error && meta.type !== 'unknown'}
 																		<span class="text-red-400/70 text-[10px] truncate block" title={entry.error}>↳ {entry.error}</span>

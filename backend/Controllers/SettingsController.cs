@@ -110,6 +110,20 @@ public sealed class SettingsController : ControllerBase
         });
     }
 
+    [HttpPost("actindo/validate-nav")]
+    public async Task<ActionResult<NavApiValidationResponse>> ValidateNavApi(
+        [FromBody] ActindoSettingsDto payload,
+        CancellationToken cancellationToken)
+    {
+        var client = _httpClientFactory.CreateClient();
+        var navApiResult = await ValidateNavApiAsync(client, payload, cancellationToken);
+
+        return Ok(new NavApiValidationResponse
+        {
+            NavApi = navApiResult
+        });
+    }
+
     private static async Task<TokenValidationResult> ValidateAccessTokenAsync(
         HttpClient client,
         ActindoSettingsDto payload,
@@ -241,6 +255,90 @@ public sealed class SettingsController : ControllerBase
             {
                 Valid = false,
                 Message = $"Refresh-Token konnte nicht geprueft werden: {TrimMessage(ex.Message)}"
+            };
+        }
+    }
+
+    private static async Task<TokenValidationResult> ValidateNavApiAsync(
+        HttpClient client,
+        ActindoSettingsDto payload,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(payload.NavApiUrl))
+        {
+            return new TokenValidationResult
+            {
+                Valid = false,
+                Message = "Keine NAV API URL eingetragen."
+            };
+        }
+
+        if (string.IsNullOrWhiteSpace(payload.NavApiToken))
+        {
+            return new TokenValidationResult
+            {
+                Valid = false,
+                Message = "Kein NAV API Token eingetragen."
+            };
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, payload.NavApiUrl)
+        {
+            Content = JsonContent.Create(new { requestType = "actindo.product.ids.get" })
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", payload.NavApiToken);
+
+        try
+        {
+            using var response = await client.SendAsync(request, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return new TokenValidationResult
+                {
+                    Valid = false,
+                    Message = string.IsNullOrWhiteSpace(body)
+                        ? $"NAV API nicht erreichbar ({(int)response.StatusCode})."
+                        : $"NAV API nicht erreichbar ({(int)response.StatusCode}): {TrimMessage(body)}"
+                };
+            }
+
+            try
+            {
+                using var document = JsonDocument.Parse(body);
+                if (document.RootElement.TryGetProperty("success", out var successProp) &&
+                    successProp.ValueKind == JsonValueKind.False)
+                {
+                    var error = document.RootElement.TryGetProperty("error", out var errorProp)
+                        ? errorProp.GetString()
+                        : null;
+                    return new TokenValidationResult
+                    {
+                        Valid = false,
+                        Message = string.IsNullOrWhiteSpace(error)
+                            ? "NAV API hat success=false zurueckgegeben."
+                            : $"NAV API hat success=false zurueckgegeben: {TrimMessage(error)}"
+                    };
+                }
+            }
+            catch
+            {
+                // non-json response is still enough to prove connectivity/auth as long as status is 2xx
+            }
+
+            return new TokenValidationResult
+            {
+                Valid = true,
+                Message = "NAV API ist erreichbar und der Bearer-Token scheint gueltig zu sein."
+            };
+        }
+        catch (Exception ex)
+        {
+            return new TokenValidationResult
+            {
+                Valid = false,
+                Message = $"NAV API konnte nicht geprueft werden: {TrimMessage(ex.Message)}"
             };
         }
     }

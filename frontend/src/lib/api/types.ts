@@ -174,6 +174,10 @@ export interface ActindoTokenValidationResponse {
 	refreshToken: TokenValidationResult;
 }
 
+export interface NavApiValidationResponse {
+	navApi: TokenValidationResult;
+}
+
 // NAV Sync Error Types
 export interface NavSyncMissingVariant {
 	sku: string;

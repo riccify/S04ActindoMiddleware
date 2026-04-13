@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { Save, RefreshCw, Trash2, Settings as SettingsIcon, Key, Link, Globe, Warehouse, Plus, X } from 'lucide-svelte';
 	import { settings as settingsApi } from '$api/client';
-	import type { ActindoSettings, ActindoTokenValidationResponse } from '$api/types';
+	import type { ActindoSettings, ActindoTokenValidationResponse, NavApiValidationResponse } from '$api/types';
 	import { permissions } from '$stores/auth';
 	import { formatDate } from '$utils/format';
 	import PageHeader from '$components/layout/PageHeader.svelte';
@@ -23,6 +23,8 @@
 	let success = $state('');
 	let tokenCheckLoading = $state(false);
 	let tokenCheckResult = $state<ActindoTokenValidationResponse | null>(null);
+	let navCheckLoading = $state(false);
+	let navCheckResult = $state<NavApiValidationResponse | null>(null);
 
 	// Form fields
 	let clientId = $state('');
@@ -62,6 +64,8 @@
 			navApiToken = data.navApiToken ?? '';
 			actindoBaseUrl = data.actindoBaseUrl ?? '';
 			warehouseMappings = { ...data.warehouseMappings };
+			navCheckResult = null;
+			tokenCheckResult = null;
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Fehler beim Laden';
 		} finally {
@@ -134,6 +138,33 @@
 			loadSettings();
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Fehler beim Zuruecksetzen';
+		}
+	}
+
+	async function handleValidateNavApi() {
+		navCheckLoading = true;
+		error = '';
+		success = '';
+		navCheckResult = null;
+
+		try {
+			navCheckResult = await settingsApi.validateNavApi({
+				clientId: clientId || null,
+				clientSecret: clientSecret || null,
+				tokenEndpoint: tokenEndpoint || null,
+				accessToken: accessToken || null,
+				accessTokenExpiresAt: settings?.accessTokenExpiresAt ?? null,
+				refreshToken: refreshToken || null,
+				endpoints,
+				navApiUrl: navApiUrl || null,
+				navApiToken: navApiToken || null,
+				actindoBaseUrl: actindoBaseUrl.trim() || null,
+				warehouseMappings
+			});
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Fehler beim Pruefen der NAV API';
+		} finally {
+			navCheckLoading = false;
 		}
 	}
 
@@ -369,6 +400,25 @@
 					{/if}
 				</div>
 			</div>
+
+			<div class="flex justify-end mt-4">
+				<Button variant="ghost" onclick={handleValidateNavApi} disabled={navCheckLoading}>
+					<RefreshCw size={16} class={navCheckLoading ? 'animate-spin' : ''} />
+					{navCheckLoading ? 'Pruefe...' : 'NAV API pruefen'}
+				</Button>
+			</div>
+
+			{#if navCheckResult}
+				<div class="mt-4 p-4 rounded-xl bg-black/20 border border-white/10">
+					<div class="flex items-center justify-between mb-1">
+						<span class="text-sm text-gray-400">NAV API Check</span>
+						<Badge variant={navCheckResult.navApi.valid ? 'success' : 'error'}>
+							{navCheckResult.navApi.valid ? 'Gueltig' : 'Ungueltig'}
+						</Badge>
+					</div>
+					<p class="text-sm text-gray-300">{navCheckResult.navApi.message}</p>
+				</div>
+			{/if}
 		</Card>
 
 		<!-- Actindo Endpoints -->
