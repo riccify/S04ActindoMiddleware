@@ -136,17 +136,13 @@ public sealed class NavClient : INavClient
         {
             if (p.Variants != null && p.Variants.Count > 0)
             {
-                var prefix = p.NavId + "-";
                 return new
                 {
                     nav_id = p.NavId,
                     actindo_id = p.ActindoId,
                     variants = p.Variants.Select(v => new
                     {
-                        // NAV expects only the variant code, not the full SKU
-                        nav_id = v.NavId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-                            ? v.NavId[prefix.Length..]
-                            : v.NavId,
+                        nav_id = v.NavId,
                         actindo_id = v.ActindoId
                     }).ToArray()
                 };
