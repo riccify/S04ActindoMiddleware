@@ -1,4 +1,5 @@
 using System.Linq;
+using System.IO;
 using ActindoMiddleware.Application.Configuration;
 using ActindoMiddleware.DTOs.Requests;
 using ActindoMiddleware.DTOs.Responses;
@@ -40,26 +41,37 @@ public sealed class ProductImageService
             endpoints.CreateFile,
             endpoints.ProductFilesSave);
 
-        foreach (var image in request.Images)
+        var renamedImages = request.Images
+            .Select(image => new RenamedProductImage(image, AppendRandomSuffixToPath(image.Path)))
+            .ToList();
+
+        var renamedPaths = request.Paths
+            .Select(path => new ProductImagePathDto
+            {
+                Id = ResolveRenamedImageId(path.Id, renamedImages)
+            })
+            .ToList();
+
+        foreach (var image in renamedImages)
         {
             _logger.LogInformation(
                 "Uploading product image for ProductId={ProductId}: Path={Path}, Type={Type}, RenameOnExistingFile={RenameOnExistingFile}, CreateDirectoryStructure={CreateDirectoryStructure}, ContentLength={ContentLength}",
                 request.Id,
                 image.Path,
-                image.Type,
-                image.RenameOnExistingFile,
-                image.CreateDirectoryStructure,
-                image.Content?.Length ?? 0);
+                image.Source.Type,
+                image.Source.RenameOnExistingFile,
+                image.Source.CreateDirectoryStructure,
+                image.Source.Content?.Length ?? 0);
 
             await _client.PostAsync(
                 endpoints.CreateFile,
                 new
                 {
                     path = image.Path,
-                    type = image.Type,
-                    renameOnExistingFile = image.RenameOnExistingFile,
-                    createDirectoryStructure = image.CreateDirectoryStructure,
-                    content = image.Content
+                    type = image.Source.Type,
+                    renameOnExistingFile = image.Source.RenameOnExistingFile,
+                    createDirectoryStructure = image.Source.CreateDirectoryStructure,
+                    content = image.Source.Content
                 },
                 cancellationToken);
 
@@ -71,13 +83,13 @@ public sealed class ProductImageService
             await Task.Delay(100, cancellationToken);
         }
 
-        if (request.Paths.Count > 0)
+        if (renamedPaths.Count > 0)
         {
             _logger.LogInformation(
                 "Relating {Count} images to product {ProductId}: ImageIds={ImageIds}",
-                request.Paths.Count,
+                renamedPaths.Count,
                 request.Id,
-                string.Join(", ", request.Paths.Select(path => path.Id)));
+                string.Join(", ", renamedPaths.Select(path => path.Id)));
 
             await _client.PostAsync(
                 endpoints.ProductFilesSave,
@@ -88,7 +100,7 @@ public sealed class ProductImageService
                         id = request.Id,
                         _pim_images = new
                         {
-                            images = request.Paths.Select(path => new { id = path.Id }).ToArray()
+                            images = renamedPaths.Select(path => new { id = path.Id }).ToArray()
                         }
                     }
                 },
@@ -108,4 +120,29 @@ public sealed class ProductImageService
             Success = true
         };
     }
+
+    private static string ResolveRenamedImageId(string originalId, IReadOnlyCollection<RenamedProductImage> renamedImages)
+    {
+        var matchedImage = renamedImages.FirstOrDefault(image =>
+            string.Equals(image.Source.Path, originalId, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(Path.GetFileName(image.Source.Path), originalId, StringComparison.OrdinalIgnoreCase));
+
+        return matchedImage?.Path ?? originalId;
+    }
+
+    private static string AppendRandomSuffixToPath(string path)
+    {
+        var directory = Path.GetDirectoryName(path);
+        var extension = Path.GetExtension(path);
+        var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(path);
+        var randomSuffix = Random.Shared.Next(10000, 100000);
+        var renamedFileName = $"{fileNameWithoutExtension}_{randomSuffix}{extension}";
+
+        if (string.IsNullOrEmpty(directory))
+            return renamedFileName;
+
+        return $"{directory.Replace('\\', '/')}/{renamedFileName}";
+    }
+
+    private sealed record RenamedProductImage(ProductImageDto Source, string Path);
 }
