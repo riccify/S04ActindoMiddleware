@@ -616,44 +616,22 @@ public sealed class SyncController : ControllerBase
                 continue;
             }
 
-            // Build variant sync list if applicable
-            List<NavVariantSyncRequest>? variantSyncs = null;
-            if (navProduct.Variants.Count > 0)
-            {
-                variantSyncs = new List<NavVariantSyncRequest>();
-                foreach (var navVariant in navProduct.Variants)
-                {
-                    // Get Actindo ID for variant
-                    string? variantActindoId = null;
-
-                    if (actindoBySku.TryGetValue(navVariant.NavId, out var actindoVariant))
-                    {
-                        variantActindoId = actindoVariant.Id.ToString();
-                    }
-                    else if (middlewareBySku.TryGetValue(navVariant.NavId, out var mwVariant) && mwVariant.ProductId.HasValue)
-                    {
-                        variantActindoId = mwVariant.ProductId.Value.ToString();
-                    }
-
-                    if (!string.IsNullOrEmpty(variantActindoId) && string.IsNullOrEmpty(navVariant.ActindoId))
-                    {
-                        variantSyncs.Add(new NavVariantSyncRequest
-                        {
-                            NavId = navVariant.NavId,
-                            ActindoId = variantActindoId
-                        });
-                    }
-                }
-            }
+            var variantSyncs = BuildVariantSyncRequests(
+                sku,
+                navProduct,
+                actindoProducts,
+                actindoBySku,
+                middlewareBySku,
+                includeAlreadySyncedVariants: false);
 
             // Only sync if NAV doesn't already have the Actindo ID
-            if (string.IsNullOrEmpty(navProduct.ActindoId) || (variantSyncs?.Count > 0))
+            if (string.IsNullOrEmpty(navProduct.ActindoId) || variantSyncs.Count > 0)
             {
                 toSync.Add(new NavProductSyncRequest
                 {
                     NavId = sku,
                     ActindoId = actindoId,
-                    Variants = variantSyncs?.Count > 0 ? variantSyncs : null
+                    Variants = variantSyncs.Count > 0 ? variantSyncs : null
                 });
             }
         }
@@ -765,40 +743,17 @@ public sealed class SyncController : ControllerBase
             if (string.IsNullOrEmpty(actindoId))
                 continue;
 
-            // Build variant sync list
-            List<NavVariantSyncRequest>? variantSyncs = null;
-            if (navProduct.Variants.Count > 0)
-            {
-                variantSyncs = new List<NavVariantSyncRequest>();
-                foreach (var navVariant in navProduct.Variants)
-                {
-                    if (!string.IsNullOrEmpty(navVariant.ActindoId))
-                        continue; // Already synced
-
-                    string? variantActindoId = null;
-                    if (actindoBySku.TryGetValue(navVariant.NavId, out var actindoVariant))
-                    {
-                        variantActindoId = actindoVariant.Id.ToString();
-                    }
-                    else if (middlewareBySku.TryGetValue(navVariant.NavId, out var mwVariant) && mwVariant.ProductId.HasValue)
-                    {
-                        variantActindoId = mwVariant.ProductId.Value.ToString();
-                    }
-
-                    if (!string.IsNullOrEmpty(variantActindoId))
-                    {
-                        variantSyncs.Add(new NavVariantSyncRequest
-                        {
-                            NavId = navVariant.NavId,
-                            ActindoId = variantActindoId
-                        });
-                    }
-                }
-            }
+            var variantSyncs = BuildVariantSyncRequests(
+                navProduct.Sku,
+                navProduct,
+                actindoProducts,
+                actindoBySku,
+                middlewareBySku,
+                includeAlreadySyncedVariants: false);
 
             // Only sync if NAV doesn't already have the Actindo ID or has variants to sync
             var needsMasterSync = string.IsNullOrEmpty(navProduct.ActindoId);
-            var needsVariantSync = variantSyncs?.Count > 0;
+            var needsVariantSync = variantSyncs.Count > 0;
 
             if (needsMasterSync || needsVariantSync)
             {
@@ -806,7 +761,7 @@ public sealed class SyncController : ControllerBase
                 {
                     NavId = navProduct.Sku,
                     ActindoId = actindoId,
-                    Variants = variantSyncs?.Count > 0 ? variantSyncs : null
+                    Variants = variantSyncs.Count > 0 ? variantSyncs : null
                 });
             }
         }
@@ -1000,41 +955,19 @@ public sealed class SyncController : ControllerBase
                 continue;
             }
 
-            // Build variant sync list - force sync all variants
-            List<NavVariantSyncRequest>? variantSyncs = null;
-            if (navProduct.Variants.Count > 0)
-            {
-                variantSyncs = new List<NavVariantSyncRequest>();
-                foreach (var navVariant in navProduct.Variants)
-                {
-                    // Get Actindo ID for variant
-                    string? variantActindoId = null;
-
-                    if (actindoBySku.TryGetValue(navVariant.NavId, out var actindoVariant))
-                    {
-                        variantActindoId = actindoVariant.Id.ToString();
-                    }
-                    else if (middlewareBySku.TryGetValue(navVariant.NavId, out var mwVariant) && mwVariant.ProductId.HasValue)
-                    {
-                        variantActindoId = mwVariant.ProductId.Value.ToString();
-                    }
-
-                    if (!string.IsNullOrEmpty(variantActindoId))
-                    {
-                        variantSyncs.Add(new NavVariantSyncRequest
-                        {
-                            NavId = navVariant.NavId,
-                            ActindoId = variantActindoId
-                        });
-                    }
-                }
-            }
+            var variantSyncs = BuildVariantSyncRequests(
+                sku,
+                navProduct,
+                actindoProducts,
+                actindoBySku,
+                middlewareBySku,
+                includeAlreadySyncedVariants: true);
 
             toSync.Add(new NavProductSyncRequest
             {
                 NavId = navProduct.Sku,
                 ActindoId = actindoId,
-                Variants = variantSyncs?.Count > 0 ? variantSyncs : null
+                Variants = variantSyncs.Count > 0 ? variantSyncs : null
             });
         }
 
@@ -1054,5 +987,56 @@ public sealed class SyncController : ControllerBase
             _logger.LogError(ex, "Failed to force sync products to NAV");
             return StatusCode(502, new { error = "Failed to sync to NAV API", details = ex.Message });
         }
+    }
+
+    private static List<NavVariantSyncRequest> BuildVariantSyncRequests(
+        string masterSku,
+        NavProductRecord navProduct,
+        IReadOnlyList<ActindoSyncProduct> actindoProducts,
+        IReadOnlyDictionary<string, ActindoSyncProduct> actindoBySku,
+        IReadOnlyDictionary<string, ProductListItem> middlewareBySku,
+        bool includeAlreadySyncedVariants)
+    {
+        var navVariantsBySku = navProduct.Variants
+            .GroupBy(v => v.NavId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        var candidateVariantSkus = actindoProducts
+            .Where(p => p.VariantStatus == "child" &&
+                        p.Sku.StartsWith(masterSku + "-", StringComparison.OrdinalIgnoreCase))
+            .Select(p => p.Sku)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(sku => sku, StringComparer.OrdinalIgnoreCase);
+
+        var result = new List<NavVariantSyncRequest>();
+
+        foreach (var variantSku in candidateVariantSkus)
+        {
+            navVariantsBySku.TryGetValue(variantSku, out var navVariant);
+
+            if (!includeAlreadySyncedVariants && !string.IsNullOrEmpty(navVariant?.ActindoId))
+                continue;
+
+            string? variantActindoId = null;
+            if (actindoBySku.TryGetValue(variantSku, out var actindoVariant))
+            {
+                variantActindoId = actindoVariant.Id.ToString();
+            }
+            else if (middlewareBySku.TryGetValue(variantSku, out var mwVariant) && mwVariant.ProductId.HasValue)
+            {
+                variantActindoId = mwVariant.ProductId.Value.ToString();
+            }
+
+            if (!string.IsNullOrEmpty(variantActindoId))
+            {
+                result.Add(new NavVariantSyncRequest
+                {
+                    NavId = variantSku,
+                    ActindoId = variantActindoId
+                });
+            }
+        }
+
+        return result;
     }
 }
