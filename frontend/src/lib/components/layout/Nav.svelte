@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { LogOut, LayoutDashboard, Package, Users, Settings, UserCircle, ArrowRightLeft, ChevronDown, Key, Zap } from 'lucide-svelte';
+	import { LogOut, LayoutDashboard, Package, Users, Settings, UserCircle, ChevronDown, Key, Zap } from 'lucide-svelte';
 	import { authStore, permissions, currentUser } from '$stores/auth';
 	import { dashboardStore } from '$stores/dashboard';
 	import StatusPill from '$components/ui/StatusPill.svelte';
@@ -33,7 +33,6 @@
 		{ href: '/products', label: 'Products', icon: Package },
 		{ href: '/customers', label: 'Customers', icon: Users },
 		{ href: '/jobs', label: 'Jobs', icon: Zap },
-		{ href: '/sync', label: 'Sync', icon: ArrowRightLeft, writeOnly: true },
 		{ href: '/users', label: 'Users', icon: UserCircle, adminOnly: true },
 		{ href: '/settings', label: 'Settings', icon: Settings, adminOnly: true }
 	];

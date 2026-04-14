@@ -137,18 +137,24 @@
 		| { type: 'nav'; requestType: string; productRef: string | null; navId: string | null; actindoId: string | null }
 		| { type: 'unknown' };
 
+	function displayJobSku(rawSku: string): string {
+		return rawSku.startsWith('product-image:')
+			? rawSku.slice('product-image:'.length)
+			: rawSku;
+	}
+
 	function extractProductRefFromJob(job: ProductJobInfo): string | null {
 		if (job.operation === 'image-upload' && job.sku.startsWith('product-image:')) {
-			return `Produkt #${job.sku.slice('product-image:'.length)}`;
+			return displayJobSku(job.sku);
 		}
-		return job.sku || null;
+		return displayJobSku(job.sku) || null;
 	}
 
 	function parseLogEntryMeta(entry: ProductJobLogEntry, job: ProductJobInfo): LogEntryMeta {
 		try {
 			const req = entry.requestPayload ? JSON.parse(entry.requestPayload) : null;
 			const res = entry.responsePayload ? JSON.parse(entry.responsePayload) : null;
-			const jobSku = job.sku;
+			const jobSku = displayJobSku(job.sku);
 			const productRef = extractProductRefFromJob(job);
 
 			if (req?.requestType !== undefined) {
@@ -555,7 +561,7 @@
 
 							<!-- SKU -->
 							<td class="py-3 pr-4">
-								<span class="font-mono font-medium text-white">{job.sku}</span>
+								<span class="font-mono font-medium text-white">{displayJobSku(job.sku)}</span>
 							</td>
 
 							<!-- Operation -->
@@ -606,7 +612,7 @@
 											<div class="flex items-center gap-2 px-3 py-2 border-b border-white/10 bg-black/30">
 												<Terminal size={13} class="text-royal-400" />
 												<span class="text-xs font-mono font-medium text-royal-300">
-													Actindo API Log — {job.sku}
+													Actindo API Log — {displayJobSku(job.sku)}
 												</span>
 												{#if job.status === 'running'}
 													<div class="flex items-center gap-1.5 ml-auto">

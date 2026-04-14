@@ -49,6 +49,7 @@ export interface BootstrapRequest {
 // Dashboard Types
 export interface MetricStats {
 	title: string;
+	total: number;
 	success: number;
 	failed: number;
 	averageDurationSeconds: number;
@@ -203,62 +204,3 @@ export interface NavSyncErrorsDto {
 }
 
 // Sync Types
-export type SyncStatus = 'Synced' | 'NeedsSync' | 'Mismatch' | 'Orphan' | 'ActindoOnly' | 'NavOnly';
-
-export interface ProductVariantSyncItem {
-	sku: string;
-	variantCode: string;
-	name: string;
-	actindoId: string | null;
-	navActindoId: string | null;
-	middlewareActindoId: string | null;
-	inActindo: boolean;
-	inNav: boolean;
-	inMiddleware: boolean;
-	status: SyncStatus;
-}
-
-export interface ProductSyncItem {
-	sku: string;
-	name: string;
-	variantStatus: VariantStatus;
-	actindoId: string | null;
-	navActindoId: string | null;
-	middlewareActindoId: string | null;
-	inActindo: boolean;
-	inNav: boolean;
-	inMiddleware: boolean;
-	status: SyncStatus;
-	needsSync: boolean;
-	isOrphan: boolean;
-	isMismatch: boolean;
-	variants: ProductVariantSyncItem[];
-}
-
-export interface CustomerSyncItem {
-	debtorNumber: string;
-	name: string;
-	middlewareActindoId: number | null;
-	navNavId: number | null;
-	navActindoId: number | null;
-	needsSync: boolean;
-}
-
-export interface ProductSyncStatus {
-	totalInActindo: number;
-	totalInNav: number;
-	totalInMiddleware: number;
-	synced: number;
-	needsSync: number;
-	mismatch: number;
-	orphaned: number;
-	items: ProductSyncItem[];
-}
-
-export interface CustomerSyncStatus {
-	totalInMiddleware: number;
-	totalInNav: number;
-	synced: number;
-	needsSync: number;
-	items: CustomerSyncItem[];
-}

@@ -119,15 +119,52 @@
 	}
 
 	let filteredProducts = $derived(
-		search.trim()
-			? products.filter(
-					(p) =>
-						p.sku.toLowerCase().includes(search.toLowerCase()) ||
-						p.name.toLowerCase().includes(search.toLowerCase()) ||
-						(p.variantCode && p.variantCode.toLowerCase().includes(search.toLowerCase()))
-				)
-			: products
+		(search.trim() ? products.filter(matchesSearch) : products).filter(
+			(product) => !isIndiDisplayedUnderMaster(product)
+		)
 	);
+
+	function matchesSearch(product: ProductListItem): boolean {
+		return (
+			product.sku.toLowerCase().includes(search.toLowerCase()) ||
+			product.name.toLowerCase().includes(search.toLowerCase()) ||
+			(product.variantCode && product.variantCode.toLowerCase().includes(search.toLowerCase()))
+		);
+	}
+
+	function isIndiSku(sku: string): boolean {
+		return sku.toUpperCase().endsWith('-INDI');
+	}
+
+	function getMasterSkuForIndi(product: ProductListItem): string | null {
+		if (product.variantStatus !== 'single' || !isIndiSku(product.sku))
+			return null;
+
+		return product.sku.slice(0, -'-INDI'.length);
+	}
+
+	function findProductBySku(sku: string): ProductListItem | undefined {
+		return products.find((product) => product.sku.toLowerCase() === sku.toLowerCase());
+	}
+
+	function getIndiVariantsForMaster(masterSku: string): ProductListItem[] {
+		return products.filter((product) => getMasterSkuForIndi(product)?.toLowerCase() === masterSku.toLowerCase());
+	}
+
+	function isIndiDisplayedUnderMaster(product: ProductListItem): boolean {
+		const masterSku = getMasterSkuForIndi(product);
+		if (!masterSku)
+			return false;
+
+		return findProductBySku(masterSku)?.variantStatus === 'master';
+	}
+
+	function getDisplayVariantCount(product: ProductListItem): number {
+		if (product.variantStatus !== 'master')
+			return product.variantCount ?? 0;
+
+		return (product.variantCount ?? 0) + getIndiVariantsForMaster(product.sku).length;
+	}
 
 	function actindoProductUrl(sku: string): string | null {
 		if (!actindoBaseUrl.trim()) return null;
@@ -179,7 +216,20 @@
 			loadingVariants = { ...loadingVariants, [masterSku]: true };
 			try {
 				const variants = await productsApi.getVariants(masterSku);
-				expandedProducts = { ...expandedProducts, [masterSku]: variants };
+				const indiVariants = getIndiVariantsForMaster(masterSku);
+				const mergedVariants = [...variants];
+				for (const indiVariant of indiVariants) {
+					if (!mergedVariants.some((variant) => variant.sku.toLowerCase() === indiVariant.sku.toLowerCase())) {
+						mergedVariants.push({
+							...indiVariant,
+							variantStatus: 'child',
+							parentSku: masterSku,
+							variantCode: indiVariant.variantCode ?? 'INDI'
+						});
+					}
+				}
+
+				expandedProducts = { ...expandedProducts, [masterSku]: mergedVariants };
 			} catch (err) {
 				console.error('Failed to load variants:', err);
 			} finally {
@@ -344,11 +394,12 @@
 						{@const isLoading = !!loadingVariants[product.sku]}
 						{@const isMaster = product.variantStatus === 'master'}
 						{@const statusBadge = getVariantStatusBadge(product.variantStatus)}
+						{@const displayVariantCount = getDisplayVariantCount(product)}
 
 						<tr class="border-b border-white/5 hover:bg-white/5 transition-colors">
 							<!-- Expand Button -->
 							<td class="py-3 px-4">
-								{#if isMaster && product.variantCount && product.variantCount > 0}
+								{#if isMaster && displayVariantCount > 0}
 									<button
 										type="button"
 										onclick={() => toggleVariants(product.sku)}
@@ -398,8 +449,8 @@
 							<td class="py-3 px-4">
 								<div class="flex items-center gap-2">
 									<Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
-									{#if isMaster && product.variantCount}
-										<Badge variant="info">{product.variantCount} Varianten</Badge>
+									{#if isMaster && displayVariantCount > 0}
+										<Badge variant="info">{displayVariantCount} Varianten</Badge>
 									{/if}
 								</div>
 							</td>

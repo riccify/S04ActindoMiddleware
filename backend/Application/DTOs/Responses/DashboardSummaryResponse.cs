@@ -23,6 +23,7 @@ public sealed class DashboardSummaryResponse
 public sealed class DashboardMetricCard
 {
     public string Title { get; init; } = string.Empty;
+    public int Total { get; init; }
     public int Success { get; init; }
     public int Failed { get; init; }
     public double AverageDurationSeconds { get; init; }

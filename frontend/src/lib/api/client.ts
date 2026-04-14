@@ -17,8 +17,6 @@ import type {
 	ActindoSettings,
 	ActindoTokenValidationResponse,
 	NavApiValidationResponse,
-	ProductSyncStatus,
-	CustomerSyncStatus,
 	NavSyncErrorsDto
 } from './types';
 
@@ -237,40 +235,6 @@ export const settings = {
 
 // Sync API
 export const sync = {
-	status: () => request<{ configured: boolean }>('/api/sync/status'),
-
-	getProductStatus: () => request<ProductSyncStatus>('/api/sync/products'),
-
-	getCustomerStatus: () => request<CustomerSyncStatus>('/api/sync/customers'),
-
-	syncProducts: (skus: string[]) =>
-		request<{ synced: number }>('/api/sync/products', {
-			method: 'POST',
-			body: JSON.stringify({ skus })
-		}),
-
-	syncAllProducts: () =>
-		request<{ synced: number; message?: string }>('/api/sync/products/all', {
-			method: 'POST'
-		}),
-
-	syncCustomer: (debtorNumber: string) =>
-		request<{ synced: number }>('/api/sync/customers', {
-			method: 'POST',
-			body: JSON.stringify({ debtorNumber })
-		}),
-
-	syncAllCustomers: () =>
-		request<{ synced: number; errors?: string[] }>('/api/sync/customers/all', {
-			method: 'POST'
-		}),
-
-	clearProductIds: (skus: string[]) =>
-		request<{ cleared: number; message?: string }>('/api/sync/products/clear', {
-			method: 'POST',
-			body: JSON.stringify({ skus })
-		}),
-
 	forceSyncProducts: (skus: string[]) =>
 		request<{ synced: number; message?: string }>('/api/sync/products/force', {
 			method: 'POST',

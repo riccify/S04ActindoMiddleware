@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using ActindoMiddleware.Application.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -83,12 +85,14 @@ public enum DashboardMetricType
 
 public sealed record MetricSnapshot
 {
+    public int Total { get; init; }
     public int Success { get; init; }
     public int Failed { get; init; }
     public double AverageDurationSeconds { get; init; }
 
     public static MetricSnapshot Empty => new()
     {
+        Total = 0,
         Success = 0,
         Failed = 0,
         AverageDurationSeconds = 0
@@ -108,6 +112,7 @@ public sealed class DashboardMetricsService : IDashboardMetricsService
 {
     private const string DefaultConnectionString = "Data Source=App_Data/dashboard.db";
     private readonly string _connectionString;
+    private readonly ProductJobQueue _jobQueue;
     private readonly ILogger<DashboardMetricsService> _logger;
     private bool _initialized;
     private readonly object _initializationLock = new();
@@ -115,30 +120,62 @@ public sealed class DashboardMetricsService : IDashboardMetricsService
     public DashboardMetricsService(
         IConfiguration configuration,
         IHostEnvironment hostEnvironment,
+        ProductJobQueue jobQueue,
         ILogger<DashboardMetricsService> logger)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(hostEnvironment);
+        ArgumentNullException.ThrowIfNull(jobQueue);
         ArgumentNullException.ThrowIfNull(logger);
 
+        _jobQueue = jobQueue;
         _logger = logger;
         _connectionString = BuildConnectionString(
             configuration.GetConnectionString("Dashboard"),
             hostEnvironment.ContentRootPath);
     }
 
-    public Task<DashboardMetricsSnapshot> GetSnapshotAsync(
+    public async Task<DashboardMetricsSnapshot> GetSnapshotAsync(
         TimeSpan window,
         CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(new DashboardMetricsSnapshot
+        EnsureDatabase();
+
+        var cutoff = DateTimeOffset.UtcNow - window;
+        var jobs = _jobQueue.GetAll();
+        var activeJobs = jobs.Count(job =>
+            job.Status is ProductSyncJobStatus.Queued or ProductSyncJobStatus.Running);
+
+        var scopedJobs = jobs
+            .Where(job =>
+                job.QueuedAt >= cutoff ||
+                job.StartedAt >= cutoff ||
+                job.CompletedAt >= cutoff)
+            .ToList();
+
+        var productTotal = await CountAsync(
+            "SELECT COUNT(*) FROM Products;",
+            cancellationToken);
+        var customerTotal = await CountAsync(
+            "SELECT COUNT(*) FROM Customers;",
+            cancellationToken);
+
+        return new DashboardMetricsSnapshot
         {
-            ActiveJobs = 0,
-            ProductStats = MetricSnapshot.Empty,
-            CustomerStats = MetricSnapshot.Empty,
-            TransactionStats = MetricSnapshot.Empty,
-            MediaStats = MetricSnapshot.Empty
-        });
+            ActiveJobs = activeJobs,
+            ProductStats = BuildMetricSnapshot(
+                productTotal,
+                scopedJobs.Where(job => IsProductOperation(job.Operation))),
+            CustomerStats = BuildMetricSnapshot(
+                customerTotal,
+                scopedJobs.Where(job => IsCustomerOperation(job.Operation))),
+            TransactionStats = BuildMetricSnapshot(
+                scopedJobs.Count(job => IsTransactionOperation(job.Operation)),
+                scopedJobs.Where(job => IsTransactionOperation(job.Operation))),
+            MediaStats = BuildMetricSnapshot(
+                scopedJobs.Count(job => IsMediaOperation(job.Operation)),
+                scopedJobs.Where(job => IsMediaOperation(job.Operation)))
+        };
     }
 
     public async Task<IReadOnlyList<ProductListItem>> GetCreatedProductsAsync(
@@ -806,6 +843,55 @@ public sealed class DashboardMetricsService : IDashboardMetricsService
         cmd.CommandText = sql;
         cmd.ExecuteNonQuery();
     }
+
+    private async Task<int> CountAsync(string sql, CancellationToken cancellationToken)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+
+        var scalar = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToInt32(scalar ?? 0);
+    }
+
+    private static MetricSnapshot BuildMetricSnapshot(int total, IEnumerable<ProductJobInfo> jobs)
+    {
+        var relevantJobs = jobs.ToList();
+        var successfulJobs = relevantJobs.Count(job => job.Status == ProductSyncJobStatus.Completed);
+        var failedJobs = relevantJobs.Count(job => job.Status == ProductSyncJobStatus.Failed);
+
+        var completedDurations = relevantJobs
+            .Where(job =>
+                job.StartedAt.HasValue &&
+                job.CompletedAt.HasValue &&
+                job.CompletedAt >= job.StartedAt)
+            .Select(job => (job.CompletedAt!.Value - job.StartedAt!.Value).TotalSeconds)
+            .ToList();
+
+        return new MetricSnapshot
+        {
+            Total = total,
+            Success = successfulJobs,
+            Failed = failedJobs,
+            AverageDurationSeconds = completedDurations.Count == 0
+                ? 0
+                : completedDurations.Average()
+        };
+    }
+
+    private static bool IsProductOperation(string operation) =>
+        operation is "create" or "save" or "full" or "inventory" or "price";
+
+    private static bool IsCustomerOperation(string operation) =>
+        operation is "customer-create" or "customer-save";
+
+    private static bool IsMediaOperation(string operation) =>
+        operation is "image-upload";
+
+    private static bool IsTransactionOperation(string operation) =>
+        operation.Contains("transaction", StringComparison.OrdinalIgnoreCase);
 
     private static string BuildConnectionString(string? configured, string contentRoot)
     {

@@ -88,6 +88,7 @@ public sealed class DashboardController : ControllerBase
     private static DashboardMetricCard MapCard(string title, MetricSnapshot snapshot) => new()
     {
         Title = title,
+        Total = snapshot.Total,
         Success = snapshot.Success,
         Failed = snapshot.Failed,
         AverageDurationSeconds = snapshot.AverageDurationSeconds
