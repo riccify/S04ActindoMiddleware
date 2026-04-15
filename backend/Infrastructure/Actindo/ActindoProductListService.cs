@@ -51,6 +51,7 @@ public sealed record ActindoProductDetails
 
 public sealed class ActindoProductListService
 {
+    private const int ProductListPageSize = 250;
     private readonly HttpClient _httpClient;
     private readonly IAuthenticationService _authService;
     private readonly IActindoEndpointProvider _endpoints;
@@ -328,37 +329,63 @@ public sealed class ActindoProductListService
         var token = await _authService.GetValidAccessTokenAsync(cancellationToken);
 
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-
-        // Actindo uses POST for getList (not GET)
-        using var response = await _httpClient.PostAsJsonAsync(endpoint, new { }, cancellationToken);
-        var content = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            _logger.LogWarning("Actindo product list failed {Status}: {Content}", (int)response.StatusCode, content);
-            throw new InvalidOperationException($"Actindo product list failed ({(int)response.StatusCode}): {content}");
-        }
-
-        using var doc = JsonDocument.Parse(content);
-        if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
-            return new List<ActindoProductData>();
-
         var result = new List<ActindoProductData>();
+        var seenProductKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var start = 0;
 
-        foreach (var item in data.EnumerateArray())
+        while (true)
         {
-            var id = TryReadInt(item, "id") ?? TryReadInt(item, "entityId");
-            var sku = item.TryGetProperty("sku", out var skuProp) ? skuProp.GetString() ?? string.Empty : string.Empty;
-            var variantStatus = item.TryGetProperty("variantStatus", out var vsProp) ? vsProp.GetString() ?? "single" : "single";
-            var parentSku = item.TryGetProperty("_pim_parent_sku", out var psProp) ? psProp.GetString() : null;
-            var variantCode = item.TryGetProperty("_pim_varcode", out var vcProp) ? vcProp.GetString() : null;
-            var createdAt = item.TryGetProperty("created", out var createdProp) ? createdProp.GetString() : null;
+            var payload = new
+            {
+                start,
+                limit = ProductListPageSize
+            };
 
-            // Name might not be in the list response, but we'll try
-            var name = GetFirstNonEmpty(item,
-                "_pim_art_name__actindo_basic__de_DE",
-                "_pim_art_name__actindo_basic__en_US");
+            // Actindo uses POST for getList (not GET)
+            using var response = await _httpClient.PostAsJsonAsync(endpoint, payload, cancellationToken);
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Actindo product list failed {Status}: {Content}", (int)response.StatusCode, content);
+                throw new InvalidOperationException($"Actindo product list failed ({(int)response.StatusCode}): {content}");
+            }
 
-            result.Add(new ActindoProductData(id, sku, variantStatus, parentSku, variantCode, createdAt, name));
+            using var doc = JsonDocument.Parse(content);
+            if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+                break;
+
+            var pageCount = 0;
+
+            foreach (var item in data.EnumerateArray())
+            {
+                pageCount++;
+
+                var id = TryReadInt(item, "id") ?? TryReadInt(item, "entityId");
+                var sku = item.TryGetProperty("sku", out var skuProp) ? skuProp.GetString() ?? string.Empty : string.Empty;
+                var variantStatus = item.TryGetProperty("variantStatus", out var vsProp) ? vsProp.GetString() ?? "single" : "single";
+                var parentSku = item.TryGetProperty("_pim_parent_sku", out var psProp) ? psProp.GetString() : null;
+                var variantCode = item.TryGetProperty("_pim_varcode", out var vcProp) ? vcProp.GetString() : null;
+                var createdAt = item.TryGetProperty("created", out var createdProp) ? createdProp.GetString() : null;
+
+                // Name might not be in the list response, but we'll try
+                var name = GetFirstNonEmpty(item,
+                    "_pim_art_name__actindo_basic__de_DE",
+                    "_pim_art_name__actindo_basic__en_US");
+
+                var productKey = id.HasValue
+                    ? $"id:{id.Value}"
+                    : $"sku:{sku}";
+
+                if (!seenProductKeys.Add(productKey))
+                    continue;
+
+                result.Add(new ActindoProductData(id, sku, variantStatus, parentSku, variantCode, createdAt, name));
+            }
+
+            if (pageCount < ProductListPageSize)
+                break;
+
+            start += ProductListPageSize;
         }
 
         _logger.LogInformation("Fetched {Count} products from Actindo", result.Count);
