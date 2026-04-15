@@ -22,7 +22,7 @@
 		FileText
 	} from 'lucide-svelte';
 	import type { ProductJobInfo, ProductJobListItem, ProductJobLogEntry } from '$api/types';
-	import { products as productsApi } from '$api/client';
+	import { products as productsApi, settings as settingsApi } from '$api/client';
 	import PageHeader from '$components/layout/PageHeader.svelte';
 	import Card from '$components/ui/Card.svelte';
 	import Button from '$components/ui/Button.svelte';
@@ -65,6 +65,7 @@
 	let newJobModalOpen = $state(false);
 	let newJobEndpoint = $state('');
 	let newJobPayload = $state('{}');
+	let availableEndpoints = $state<Array<{ key: string; value: string }>>([]);
 
 	function openPayloadModal(entry: ProductJobLogEntry, e: MouseEvent) {
 		e.stopPropagation();
@@ -118,12 +119,28 @@
 	}
 
 	function openNewJobModal() {
-		newJobEndpoint = '';
+		newJobEndpoint = availableEndpoints[0]?.value ?? '';
 		newJobPayload = '{}';
 		replayResponsePayload = null;
 		replaySuccess = null;
 		replayError = null;
 		newJobModalOpen = true;
+	}
+
+	async function loadAvailableEndpoints() {
+		try {
+			const settings = await settingsApi.get();
+			availableEndpoints = Object.entries(settings.endpoints ?? {})
+				.filter(([, value]) => value.trim().length > 0)
+				.sort(([left], [right]) => left.localeCompare(right))
+				.map(([key, value]) => ({ key, value }));
+
+			if (!newJobEndpoint && availableEndpoints.length > 0) {
+				newJobEndpoint = availableEndpoints[0].value;
+			}
+		} catch {
+			availableEndpoints = [];
+		}
 	}
 
 	async function retryJob(job: ProductJobListItem, e: MouseEvent) {
@@ -445,6 +462,7 @@
 
 	onMount(() => {
 		load();
+		loadAvailableEndpoints();
 		const pollInterval = setInterval(() => load(), 3000);
 		const clockInterval = setInterval(() => (now = Date.now()), 1000);
 		return () => {
@@ -1088,13 +1106,22 @@
 				<label for="job-endpoint" class="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
 					Endpoint
 				</label>
-				<input
+				<select
 					id="job-endpoint"
-					type="text"
 					bind:value={newJobEndpoint}
-					placeholder="https://... oder Actindo.Modules..."
-					class="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:border-royal-500/50"
-				/>
+					class="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-royal-500/50"
+				>
+					{#if availableEndpoints.length === 0}
+						<option value="">Keine gepflegten Endpoints gefunden</option>
+					{:else}
+						{#each availableEndpoints as endpoint}
+							<option value={endpoint.value}>
+								{endpoint.key} · {endpoint.value}
+							</option>
+						{/each}
+					{/if}
+				</select>
+				<p class="mt-2 text-xs text-gray-500">Der Request wird immer als POST gesendet.</p>
 			</div>
 
 			<div>
