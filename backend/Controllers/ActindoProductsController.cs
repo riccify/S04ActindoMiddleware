@@ -105,6 +105,14 @@ public sealed class ActindoProductsController : ControllerBase
     public IActionResult DeleteJob(Guid jobId) =>
         _jobQueue.RemoveJob(jobId) ? NoContent() : NotFound();
 
+    [HttpDelete("active-jobs/successful")]
+    [Authorize(Policy = AuthPolicies.Write)]
+    public IActionResult DeleteSuccessfulJobs()
+    {
+        var deleted = _jobQueue.RemoveSuccessfulJobs();
+        return Ok(new { deleted });
+    }
+
     [HttpPost("log-replay")]
     [Authorize(Policy = AuthPolicies.Write)]
     [ProducesResponseType(StatusCodes.Status200OK)]

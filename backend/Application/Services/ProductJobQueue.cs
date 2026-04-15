@@ -257,6 +257,22 @@ public sealed class ProductJobQueue
         return _jobs.TryRemove(jobId, out _);
     }
 
+    public int RemoveSuccessfulJobs()
+    {
+        var successfulIds = _jobs.Values
+            .Where(job => job.Status == ProductSyncJobStatus.Completed)
+            .Select(job => job.Id)
+            .ToList();
+
+        foreach (var jobId in successfulIds)
+        {
+            _store.Delete(jobId);
+            _jobs.TryRemove(jobId, out _);
+        }
+
+        return successfulIds.Count;
+    }
+
     public IReadOnlyList<ProductJobInfo> GetAll() =>
         _jobs.Values.OrderBy(j => j.QueuedAt).ToList();
 }

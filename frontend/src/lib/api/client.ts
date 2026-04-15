@@ -155,6 +155,11 @@ export const products = {
 	deleteJob: (jobId: string) =>
 		request<void>(`/api/actindo/products/active-jobs/${jobId}`, { method: 'DELETE' }),
 
+	deleteSuccessfulJobs: () =>
+		request<{ deleted: number }>('/api/actindo/products/active-jobs/successful', {
+			method: 'DELETE'
+		}),
+
 	retryJob: (jobId: string) =>
 		request<{ message: string }>(`/api/actindo/products/active-jobs/${jobId}/retry`, {
 			method: 'POST'

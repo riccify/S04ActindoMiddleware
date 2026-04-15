@@ -41,6 +41,7 @@
 	let skuSearch = $state('');
 	let showErrorsOnly = $state(false);
 	let retryingJobId = $state<string | null>(null);
+	let deletingSuccessfulJobs = $state(false);
 
 	// NAV payload modal
 	let navPayloadJob = $state<ProductJobInfo | null>(null);
@@ -61,6 +62,9 @@
 	let replayResponsePayload = $state<string | null>(null);
 	let replaySuccess = $state<boolean | null>(null);
 	let replayError = $state<string | null>(null);
+	let newJobModalOpen = $state(false);
+	let newJobEndpoint = $state('');
+	let newJobPayload = $state('{}');
 
 	function openPayloadModal(entry: ProductJobLogEntry, e: MouseEvent) {
 		e.stopPropagation();
@@ -74,12 +78,20 @@
 
 	async function handleReplay() {
 		if (!selectedLogEntry) return;
+		await sendCustomRequest(selectedLogEntry.endpoint, editablePayload);
+	}
+
+	async function handleNewJobSubmit() {
+		await sendCustomRequest(newJobEndpoint, newJobPayload);
+	}
+
+	async function sendCustomRequest(endpoint: string, payload: string) {
 		replayLoading = true;
 		replayResponsePayload = null;
 		replaySuccess = null;
 		replayError = null;
 		try {
-			const result = await productsApi.logReplay(selectedLogEntry.endpoint, editablePayload);
+			const result = await productsApi.logReplay(endpoint, payload);
 			replaySuccess = result.success;
 			replayResponsePayload = result.responsePayload ? formatJson(result.responsePayload) : null;
 			replayError = result.error ?? null;
@@ -103,6 +115,15 @@
 		} finally {
 			navPayloadLoading = false;
 		}
+	}
+
+	function openNewJobModal() {
+		newJobEndpoint = '';
+		newJobPayload = '{}';
+		replayResponsePayload = null;
+		replaySuccess = null;
+		replayError = null;
+		newJobModalOpen = true;
 	}
 
 	async function retryJob(job: ProductJobListItem, e: MouseEvent) {
@@ -398,6 +419,22 @@
 		}
 	}
 
+	async function deleteAllSuccessfulJobs() {
+		if (deletingSuccessfulJobs) return;
+		deletingSuccessfulJobs = true;
+		try {
+			await productsApi.deleteSuccessfulJobs();
+			if (expandedJobId && !activeJobs.find((job) => job.id === expandedJobId && job.status !== 'completed')) {
+				closeLogConsole();
+			}
+			await load();
+		} catch {
+			// ignore
+		} finally {
+			deletingSuccessfulJobs = false;
+		}
+	}
+
 	function goToPreviousPage() {
 		currentPage = Math.max(1, currentPageSafe - 1);
 	}
@@ -425,6 +462,18 @@
 <PageHeader title="Jobs" subtitle="Aktive und wartende Sync-Jobs">
 	{#snippet actions()}
 		<div class="flex items-center gap-3">
+			<Button variant="secondary" onclick={openNewJobModal}>
+				<Play size={16} />
+				Neuer Job
+			</Button>
+			<Button variant="ghost" onclick={deleteAllSuccessfulJobs} disabled={deletingSuccessfulJobs}>
+				{#if deletingSuccessfulJobs}
+					<Loader2 size={16} class="animate-spin" />
+				{:else}
+					<Trash2 size={16} />
+				{/if}
+				Alle erfolgreichen Jobs löschen
+			</Button>
 			{#if runningCount > 0 || queuedCount > 0}
 				<div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-royal-600/20 border border-royal-500/30">
 					<Loader2 size={14} class="animate-spin text-royal-400" />
@@ -660,7 +709,7 @@
 									{:else if job.status === 'queued'}
 										<Clock size={15} class="text-gray-400 shrink-0" />
 										<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-700 text-gray-300">Wartet</span>
-\t\t\t\t\t\t\t\t\t{:else if job.status === 'completed' && !jobsWithErrors.has(job.id)}
+									{:else if job.status === 'completed' && !jobsWithErrors.has(job.id)}
 										<CheckCircle2 size={15} class="text-green-400 shrink-0" />
 										<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-green-900/40 text-green-300">Fertig</span>
 									{:else}
@@ -990,7 +1039,9 @@
 			</div>
 		</div>
 	</Modal>
-{:else if navPayloadModalOpen}
+{/if}
+
+{#if navPayloadModalOpen && !navPayloadJob}
 	<Modal
 		bind:open={navPayloadModalOpen}
 		title="NAV Request"
@@ -1001,6 +1052,79 @@
 			<div class="flex items-center gap-3 text-sm text-gray-400">
 				<Loader2 size={18} class={navPayloadLoading ? 'animate-spin' : ''} />
 				<span>{navPayloadLoading ? 'Lade Job-Details...' : 'Keine NAV-Daten verfÃ¼gbar.'}</span>
+			</div>
+		</div>
+	</Modal>
+{/if}
+
+{#if newJobModalOpen}
+	<Modal
+		bind:open={newJobModalOpen}
+		title="Neuer Job"
+		class="max-w-5xl"
+	>
+		{#snippet headerActions()}
+			<button
+				type="button"
+				onclick={handleNewJobSubmit}
+				disabled={replayLoading || !newJobEndpoint.trim()}
+				class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+					bg-royal-600/30 border border-royal-500/40 text-royal-300
+					hover:bg-royal-600/50 hover:text-white transition-colors
+					disabled:opacity-50 disabled:cursor-not-allowed"
+			>
+				{#if replayLoading}
+					<Loader2 size={12} class="animate-spin" />
+					Läuft...
+				{:else}
+					<Play size={12} />
+					Senden
+				{/if}
+			</button>
+		{/snippet}
+
+		<div class="space-y-4">
+			<div>
+				<label for="job-endpoint" class="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+					Endpoint
+				</label>
+				<input
+					id="job-endpoint"
+					type="text"
+					bind:value={newJobEndpoint}
+					placeholder="https://... oder Actindo.Modules..."
+					class="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:border-royal-500/50"
+				/>
+			</div>
+
+			<div>
+				<label for="job-payload" class="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+					Payload
+				</label>
+				<textarea
+					id="job-payload"
+					bind:value={newJobPayload}
+					class="w-full text-xs font-mono bg-black/40 border border-white/10 rounded-lg p-3 text-gray-300 whitespace-pre resize-none h-[40vh] focus:outline-none focus:border-royal-500/50"
+					spellcheck="false"
+				></textarea>
+			</div>
+
+			<div>
+				<div class="flex items-center gap-2 mb-2">
+					<span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Response</span>
+					{#if replaySuccess === true}
+						<span class="text-xs px-1.5 py-0.5 rounded bg-green-900/40 text-green-400">OK</span>
+					{:else if replaySuccess === false}
+						<span class="text-xs px-1.5 py-0.5 rounded bg-red-900/40 text-red-400">Fehler</span>
+					{/if}
+				</div>
+				{#if replayError}
+					<div class="text-xs font-mono bg-black/40 border border-red-500/30 rounded-lg p-3 text-red-400 min-h-[120px] overflow-y-auto whitespace-pre-wrap">
+						{replayError}
+					</div>
+				{:else}
+					<pre class="text-xs font-mono bg-black/40 border border-white/10 rounded-lg p-3 overflow-auto min-h-[120px] {replaySuccess === false ? 'text-red-300' : replaySuccess === true ? 'text-green-200' : 'text-gray-500'} whitespace-pre">{replayResponsePayload ?? 'Noch keine Antwort.'}</pre>
+				{/if}
 			</div>
 		</div>
 	</Modal>
