@@ -29,11 +29,13 @@
 	import Modal from '$components/ui/Modal.svelte';
 	
 	type JobsTab = 'products' | 'customers' | 'transactions';
+	const PAGE_SIZE = 20;
 
 	let activeJobs = $state<ProductJobInfo[]>([]);
 	let loading = $state(true);
 	let now = $state(Date.now());
 	let activeTab = $state<JobsTab>('products');
+	let currentPage = $state(1);
 
 	// Filter state
 	let skuSearch = $state('');
@@ -170,6 +172,11 @@
 		return isTransactionJob(job);
 	}
 
+	function setActiveTab(tab: JobsTab) {
+		activeTab = tab;
+		currentPage = 1;
+	}
+
 	function extractProductRefFromJob(job: ProductJobInfo): string | null {
 		if (job.operation === 'image-upload' && job.sku.startsWith('product-image:')) {
 			return displayJobSku(job.sku);
@@ -270,6 +277,12 @@
 				return false;
 			return true;
 		})
+	);
+
+	let totalPages = $derived(Math.max(1, Math.ceil(filteredJobs.length / PAGE_SIZE)));
+	let currentPageSafe = $derived(Math.min(currentPage, totalPages));
+	let pagedJobs = $derived(
+		filteredJobs.slice((currentPageSafe - 1) * PAGE_SIZE, currentPageSafe * PAGE_SIZE)
 	);
 
 	async function load() {
@@ -376,6 +389,14 @@
 		}
 	}
 
+	function goToPreviousPage() {
+		currentPage = Math.max(1, currentPageSafe - 1);
+	}
+
+	function goToNextPage() {
+		currentPage = Math.min(totalPages, currentPageSafe + 1);
+	}
+
 	onMount(() => {
 		load();
 		const pollInterval = setInterval(() => load(), 3000);
@@ -446,7 +467,7 @@
 	<div class="flex flex-wrap items-center gap-2 mb-5">
 		<button
 			type="button"
-			onclick={() => (activeTab = 'products')}
+			onclick={() => setActiveTab('products')}
 			class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border
 				{activeTab === 'products'
 					? 'bg-royal-600/20 border-royal-500/40 text-royal-300'
@@ -456,7 +477,7 @@
 		</button>
 		<button
 			type="button"
-			onclick={() => (activeTab = 'customers')}
+			onclick={() => setActiveTab('customers')}
 			class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border
 				{activeTab === 'customers'
 					? 'bg-royal-600/20 border-royal-500/40 text-royal-300'
@@ -466,7 +487,7 @@
 		</button>
 		<button
 			type="button"
-			onclick={() => (activeTab = 'transactions')}
+			onclick={() => setActiveTab('transactions')}
 			class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border
 				{activeTab === 'transactions'
 					? 'bg-royal-600/20 border-royal-500/40 text-royal-300'
@@ -503,6 +524,34 @@
 		{/if}
 	</div>
 
+	{#if filteredJobs.length > 0}
+		<div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+			<span class="text-xs text-gray-500">
+				Seite {currentPageSafe} von {totalPages} · {filteredJobs.length} Einträge
+			</span>
+			<div class="flex items-center gap-2">
+				<button
+					type="button"
+					onclick={goToPreviousPage}
+					disabled={currentPageSafe <= 1}
+					class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
+						bg-white/5 border-white/10 text-gray-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+				>
+					Vorherige
+				</button>
+				<button
+					type="button"
+					onclick={goToNextPage}
+					disabled={currentPageSafe >= totalPages}
+					class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
+						bg-white/5 border-white/10 text-gray-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+				>
+					Nächste
+				</button>
+			</div>
+		</div>
+	{/if}
+
 	{#if loading && activeJobs.length === 0}
 		<div class="flex justify-center py-16">
 			<Loader2 size={32} class="animate-spin text-royal-400" />
@@ -532,7 +581,7 @@
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-white/5">
-					{#each filteredJobs as job (job.id)}
+					{#each pagedJobs as job (job.id)}
 						<!-- Job row -->
 						<tr
 							class="cursor-pointer transition-colors hover:bg-white/5
