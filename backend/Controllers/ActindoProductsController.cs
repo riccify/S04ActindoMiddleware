@@ -119,24 +119,70 @@ public sealed class ActindoProductsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ReplayLogEntry(
         [FromBody] LogReplayRequest request,
-        CancellationToken _)
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Endpoint) || string.IsNullOrWhiteSpace(request.RequestPayload))
             return BadRequest("Endpoint und RequestPayload sind erforderlich.");
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-        var cancellationToken = cts.Token;
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cts.Token);
+        var timeoutToken = linkedCts.Token;
 
         try
         {
+            var resolvedEndpoint = await ResolveReplayEndpointAsync(request.Endpoint, timeoutToken);
             var payload = JsonSerializer.Deserialize<JsonElement>(request.RequestPayload);
-            var response = await _actindoClient.PostAsync(request.Endpoint, payload, cancellationToken);
+            var response = await _actindoClient.PostAsync(resolvedEndpoint, payload, timeoutToken);
             return Ok(new { success = true, responsePayload = JsonSerializer.Serialize(response) });
         }
         catch (Exception ex)
         {
             return Ok(new { success = false, responsePayload = (string?)null, error = ex.Message });
         }
+    }
+
+    private async Task<string> ResolveReplayEndpointAsync(string endpoint, CancellationToken cancellationToken)
+    {
+        var requestedEndpoint = (endpoint ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(requestedEndpoint))
+            throw new InvalidOperationException("Endpoint ist leer.");
+
+        var configuredEndpoints = await _endpointProvider.GetAsync(cancellationToken);
+        var configuredEndpoint = requestedEndpoint.ToUpperInvariant() switch
+        {
+            "CREATE_PRODUCT" => configuredEndpoints.CreateProduct,
+            "SAVE_PRODUCT" => configuredEndpoints.SaveProduct,
+            "CREATE_INVENTORY" => configuredEndpoints.CreateInventory,
+            "CREATE_INVENTORY_MOVEMENT" => configuredEndpoints.CreateInventoryMovement,
+            "CREATE_RELATION" => configuredEndpoints.CreateRelation,
+            "CREATE_CUSTOMER" => configuredEndpoints.CreateCustomer,
+            "SAVE_CUSTOMER" => configuredEndpoints.SaveCustomer,
+            "SAVE_PRIMARY_ADDRESS" => configuredEndpoints.SavePrimaryAddress,
+            "GET_TRANSACTIONS" => configuredEndpoints.GetTransactions,
+            "CREATE_FILE" => configuredEndpoints.CreateFile,
+            "PRODUCT_FILES_SAVE" => configuredEndpoints.ProductFilesSave,
+            "GET_PRODUCT_LIST" => configuredEndpoints.GetProductList,
+            "DELETE_PRODUCT" => configuredEndpoints.DeleteProduct,
+            "GET_PRODUCT" => configuredEndpoints.GetProduct,
+            "GET_VARIANTS_LIST" => configuredEndpoints.GetVariantsList,
+            _ => null
+        };
+
+        if (!string.IsNullOrWhiteSpace(configuredEndpoint))
+            return configuredEndpoint;
+
+        if (Uri.TryCreate(requestedEndpoint, UriKind.Absolute, out var absoluteEndpoint))
+            return absoluteEndpoint.ToString();
+
+        var settings = await _settingsStore.GetActindoSettingsAsync(cancellationToken);
+        var baseUrl = (settings.ActindoBaseUrl ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(baseUrl))
+            throw new InvalidOperationException("Actindo Base URL ist nicht konfiguriert.");
+
+        if (!baseUrl.EndsWith('/'))
+            baseUrl += "/";
+
+        return $"{baseUrl}{requestedEndpoint.TrimStart('/')}";
     }
 
     private async Task<ActionResult?> ValidateNavSettingsForAsync(CancellationToken cancellationToken)
