@@ -6,6 +6,7 @@ import type {
 	DashboardSummary,
 	ProductListItem,
 	ProductStockItem,
+	ProductJobListItem,
 	ProductJobInfo,
 	ProductJobLogEntry,
 	CustomerListItem,
@@ -143,7 +144,10 @@ export const products = {
 			body: JSON.stringify(data)
 		}),
 
-	activeJobs: () => request<ProductJobInfo[]>('/api/actindo/products/active-jobs'),
+	activeJobs: () => request<ProductJobListItem[]>('/api/actindo/products/active-jobs'),
+
+	job: (jobId: string) =>
+		request<ProductJobInfo>(`/api/actindo/products/active-jobs/${jobId}`),
 
 	jobLogs: (jobId: string) =>
 		request<ProductJobLogEntry[]>(`/api/actindo/products/active-jobs/${jobId}/logs`),

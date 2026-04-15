@@ -21,7 +21,7 @@
 		Search,
 		FileText
 	} from 'lucide-svelte';
-	import type { ProductJobInfo, ProductJobLogEntry } from '$api/types';
+	import type { ProductJobInfo, ProductJobListItem, ProductJobLogEntry } from '$api/types';
 	import { products as productsApi } from '$api/client';
 	import PageHeader from '$components/layout/PageHeader.svelte';
 	import Card from '$components/ui/Card.svelte';
@@ -31,7 +31,7 @@
 	type JobsTab = 'products' | 'customers' | 'transactions';
 	const PAGE_SIZE = 20;
 
-	let activeJobs = $state<ProductJobInfo[]>([]);
+	let activeJobs = $state<ProductJobListItem[]>([]);
 	let loading = $state(true);
 	let now = $state(Date.now());
 	let activeTab = $state<JobsTab>('products');
@@ -45,6 +45,7 @@
 	// NAV payload modal
 	let navPayloadJob = $state<ProductJobInfo | null>(null);
 	let navPayloadModalOpen = $state(false);
+	let navPayloadLoading = $state(false);
 
 	// Log console state
 	let expandedJobId = $state<string | null>(null);
@@ -90,13 +91,21 @@
 		}
 	}
 
-	function openNavPayloadModal(job: ProductJobInfo, e: MouseEvent) {
+	async function openNavPayloadModal(job: ProductJobListItem, e: MouseEvent) {
 		e.stopPropagation();
-		navPayloadJob = job;
+		navPayloadLoading = true;
+		navPayloadJob = null;
 		navPayloadModalOpen = true;
+		try {
+			navPayloadJob = await productsApi.job(job.id);
+		} catch {
+			navPayloadJob = null;
+		} finally {
+			navPayloadLoading = false;
+		}
 	}
 
-	async function retryJob(job: ProductJobInfo, e: MouseEvent) {
+	async function retryJob(job: ProductJobListItem, e: MouseEvent) {
 		e.stopPropagation();
 		if (retryingJobId === job.id) return;
 		retryingJobId = job.id;
@@ -110,7 +119,7 @@
 		}
 	}
 
-	async function deleteJob(job: ProductJobInfo, e: MouseEvent) {
+	async function deleteJob(job: ProductJobListItem, e: MouseEvent) {
 		e.stopPropagation();
 		try {
 			await productsApi.deleteJob(job.id);
@@ -154,19 +163,19 @@
 		return rawSku;
 	}
 
-	function isTransactionJob(job: ProductJobInfo): boolean {
+	function isTransactionJob(job: ProductJobListItem): boolean {
 		return job.operation.includes('transaction');
 	}
 
-	function isCustomerJob(job: ProductJobInfo): boolean {
+	function isCustomerJob(job: ProductJobListItem): boolean {
 		return job.operation === 'customer-create' || job.operation === 'customer-save';
 	}
 
-	function isProductJob(job: ProductJobInfo): boolean {
+	function isProductJob(job: ProductJobListItem): boolean {
 		return !isTransactionJob(job) && !isCustomerJob(job);
 	}
 
-	function jobMatchesTab(job: ProductJobInfo, tab: JobsTab): boolean {
+	function jobMatchesTab(job: ProductJobListItem, tab: JobsTab): boolean {
 		if (tab === 'products') return isProductJob(job);
 		if (tab === 'customers') return isCustomerJob(job);
 		return isTransactionJob(job);
@@ -177,14 +186,14 @@
 		currentPage = 1;
 	}
 
-	function extractProductRefFromJob(job: ProductJobInfo): string | null {
+	function extractProductRefFromJob(job: ProductJobListItem): string | null {
 		if (job.operation === 'image-upload' && job.sku.startsWith('product-image:')) {
 			return displayJobSku(job.sku);
 		}
 		return displayJobSku(job.sku) || null;
 	}
 
-	function parseLogEntryMeta(entry: ProductJobLogEntry, job: ProductJobInfo): LogEntryMeta {
+	function parseLogEntryMeta(entry: ProductJobLogEntry, job: ProductJobListItem): LogEntryMeta {
 		try {
 			const req = entry.requestPayload ? JSON.parse(entry.requestPayload) : null;
 			const res = entry.responsePayload ? JSON.parse(entry.responsePayload) : null;
@@ -330,7 +339,7 @@
 		}
 	}
 
-	async function toggleJob(job: ProductJobInfo) {
+	async function toggleJob(job: ProductJobListItem) {
 		if (expandedJobId === job.id) {
 			closeLogConsole();
 			return;
@@ -625,18 +634,14 @@
 
 							<!-- NAV payload button -->
 							<td class="py-3 pr-2 w-6">
-								{#if job.navRequestPayload}
-									<button
-										type="button"
-										class="text-gray-600 hover:text-royal-400 transition-colors p-0.5 rounded"
-										onclick={(e) => openNavPayloadModal(job, e)}
-										title="NAV Request/Response anzeigen"
-									>
-										<FileText size={13} />
-									</button>
-								{:else}
-									<span class="w-4 inline-block"></span>
-								{/if}
+								<button
+									type="button"
+									class="text-gray-600 hover:text-royal-400 transition-colors p-0.5 rounded"
+									onclick={(e) => openNavPayloadModal(job, e)}
+									title="Job-Details anzeigen"
+								>
+									<FileText size={13} />
+								</button>
 							</td>
 
 							<!-- Expand indicator -->
@@ -982,6 +987,20 @@
 						<pre class="text-xs font-mono bg-black/40 border border-white/10 rounded-lg p-3 overflow-auto h-[60vh] {replaySuccess === false ? 'text-red-300' : replaySuccess === true ? 'text-green-200' : selectedLogEntry.success ? 'text-gray-300' : 'text-red-300'} whitespace-pre">{replaySuccess !== null ? (replayResponsePayload ?? '—') : formatJson(selectedLogEntry.responsePayload)}</pre>
 					{/if}
 				</div>
+			</div>
+		</div>
+	</Modal>
+{:else if navPayloadModalOpen}
+	<Modal
+		bind:open={navPayloadModalOpen}
+		title="NAV Request"
+		class="max-w-3xl"
+		onclose={() => (navPayloadJob = null)}
+	>
+		<div class="py-10 flex items-center justify-center">
+			<div class="flex items-center gap-3 text-sm text-gray-400">
+				<Loader2 size={18} class={navPayloadLoading ? 'animate-spin' : ''} />
+				<span>{navPayloadLoading ? 'Lade Job-Details...' : 'Keine NAV-Daten verfÃ¼gbar.'}</span>
 			</div>
 		</div>
 	</Modal>

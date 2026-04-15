@@ -19,6 +19,17 @@ namespace ActindoMiddleware.Controllers;
 [Authorize(Policy = AuthPolicies.Write)]
 public sealed class ActindoProductsController : ControllerBase
 {
+    public sealed record ProductJobListItemDto(
+        Guid Id,
+        string Sku,
+        string Operation,
+        string? BufferId,
+        ProductSyncJobStatus Status,
+        DateTimeOffset QueuedAt,
+        DateTimeOffset? StartedAt,
+        DateTimeOffset? CompletedAt,
+        string? Error);
+
     private readonly ProductCreateService _productCreateService;
     private readonly ProductSaveService _productSaveService;
     private readonly IDashboardMetricsService _dashboardMetrics;
@@ -69,7 +80,25 @@ public sealed class ActindoProductsController : ControllerBase
 
     [HttpGet("active-jobs")]
     [Authorize(Policy = AuthPolicies.Read)]
-    public IActionResult GetActiveJobs() => Ok(_jobQueue.GetAll());
+    public IActionResult GetActiveJobs() => Ok(
+        _jobQueue.GetAll().Select(job => new ProductJobListItemDto(
+            job.Id,
+            job.Sku,
+            job.Operation,
+            job.BufferId,
+            job.Status,
+            job.QueuedAt,
+            job.StartedAt,
+            job.CompletedAt,
+            job.Error)));
+
+    [HttpGet("active-jobs/{jobId:guid}")]
+    [Authorize(Policy = AuthPolicies.Read)]
+    public IActionResult GetActiveJob(Guid jobId)
+    {
+        var job = _jobQueue.Get(jobId);
+        return job is null ? NotFound() : Ok(job);
+    }
 
     [HttpDelete("active-jobs/{jobId:guid}")]
     [Authorize(Policy = AuthPolicies.Write)]

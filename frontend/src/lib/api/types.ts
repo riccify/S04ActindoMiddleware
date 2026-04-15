@@ -24,6 +24,18 @@ export interface ProductJobInfo {
 	navResponsePayload: string | null;
 }
 
+export interface ProductJobListItem {
+	id: string;
+	sku: string;
+	operation: string;
+	bufferId: string | null;
+	status: ProductSyncJobStatus;
+	queuedAt: string;
+	startedAt: string | null;
+	completedAt: string | null;
+	error: string | null;
+}
+
 // Auth Types
 export interface User {
 	authenticated: boolean;
