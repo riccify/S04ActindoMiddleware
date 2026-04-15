@@ -12,11 +12,14 @@ namespace ActindoMiddleware.Controllers;
 public sealed class ActindoTransactionsController : ControllerBase
 {
     private readonly TransactionService _transactionService;
+    private readonly ProductJobQueue _jobQueue;
 
     public ActindoTransactionsController(
-        TransactionService transactionService)
+        TransactionService transactionService,
+        ProductJobQueue jobQueue)
     {
         _transactionService = transactionService;
+        _jobQueue = jobQueue;
     }
 
     [HttpPost("get")]
@@ -31,8 +34,28 @@ public sealed class ActindoTransactionsController : ControllerBase
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
         var cancellationToken = cts.Token;
+        var jobId = Guid.NewGuid();
+        var jobReference = $"transactions:{request.Date}";
+        var requestPayload = System.Text.Json.JsonSerializer.Serialize(request);
+        var success = false;
+        string? error = null;
 
-        var result = await _transactionService.GetTransactionsAsync(request, cancellationToken);
-        return StatusCode(StatusCodes.Status201Created, result);
+        _jobQueue.RegisterSyncJob(jobId, jobReference, "transaction-get", requestPayload);
+
+        try
+        {
+            var result = await _transactionService.GetTransactionsAsync(request, cancellationToken);
+            success = true;
+            return StatusCode(StatusCodes.Status201Created, result);
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            throw;
+        }
+        finally
+        {
+            _jobQueue.CompleteSyncJob(jobId, success, error);
+        }
     }
 }

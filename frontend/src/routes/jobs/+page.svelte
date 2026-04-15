@@ -27,10 +27,13 @@
 	import Card from '$components/ui/Card.svelte';
 	import Button from '$components/ui/Button.svelte';
 	import Modal from '$components/ui/Modal.svelte';
+	
+	type JobsTab = 'products' | 'customers' | 'transactions';
 
 	let activeJobs = $state<ProductJobInfo[]>([]);
 	let loading = $state(true);
 	let now = $state(Date.now());
+	let activeTab = $state<JobsTab>('products');
 
 	// Filter state
 	let skuSearch = $state('');
@@ -138,9 +141,33 @@
 		| { type: 'unknown' };
 
 	function displayJobSku(rawSku: string): string {
-		return rawSku.startsWith('product-image:')
-			? rawSku.slice('product-image:'.length)
-			: rawSku;
+		if (rawSku.startsWith('product-image:')) {
+			return rawSku.slice('product-image:'.length);
+		}
+
+		if (rawSku.startsWith('transactions:')) {
+			return rawSku.slice('transactions:'.length);
+		}
+
+		return rawSku;
+	}
+
+	function isTransactionJob(job: ProductJobInfo): boolean {
+		return job.operation.includes('transaction');
+	}
+
+	function isCustomerJob(job: ProductJobInfo): boolean {
+		return job.operation === 'customer-create' || job.operation === 'customer-save';
+	}
+
+	function isProductJob(job: ProductJobInfo): boolean {
+		return !isTransactionJob(job) && !isCustomerJob(job);
+	}
+
+	function jobMatchesTab(job: ProductJobInfo, tab: JobsTab): boolean {
+		if (tab === 'products') return isProductJob(job);
+		if (tab === 'customers') return isCustomerJob(job);
+		return isTransactionJob(job);
 	}
 
 	function extractProductRefFromJob(job: ProductJobInfo): string | null {
@@ -229,13 +256,15 @@
 		return { type: 'unknown' };
 	}
 
-	let runningCount = $derived(activeJobs.filter((j) => j.status === 'running').length);
-	let queuedCount = $derived(activeJobs.filter((j) => j.status === 'queued').length);
-	let completedCount = $derived(activeJobs.filter((j) => j.status === 'completed').length);
-	let failedCount = $derived(activeJobs.filter((j) => j.status === 'failed').length);
+	let tabJobs = $derived(activeJobs.filter((job) => jobMatchesTab(job, activeTab)));
+
+	let runningCount = $derived(tabJobs.filter((j) => j.status === 'running').length);
+	let queuedCount = $derived(tabJobs.filter((j) => j.status === 'queued').length);
+	let completedCount = $derived(tabJobs.filter((j) => j.status === 'completed').length);
+	let failedCount = $derived(tabJobs.filter((j) => j.status === 'failed').length);
 
 	let filteredJobs = $derived(
-		activeJobs.filter((j) => {
+		tabJobs.filter((j) => {
 			if (showErrorsOnly && j.status !== 'failed' && !jobsWithErrors.has(j.id)) return false;
 			if (skuSearch.trim() && !j.sku.toLowerCase().includes(skuSearch.trim().toLowerCase()))
 				return false;
@@ -325,6 +354,7 @@
 		if (op === 'image-upload') return 'Bilder';
 		if (op === 'customer-create') return 'Debitor anlegen';
 		if (op === 'customer-save') return 'Debitor speichern';
+		if (op === 'transaction-get') return 'Transaktionen laden';
 		return op;
 	}
 
@@ -362,7 +392,7 @@
 	<title>Jobs | Actindo Middleware</title>
 </svelte:head>
 
-<PageHeader title="Jobs" subtitle="Aktive und wartende Produkt-Sync-Jobs">
+<PageHeader title="Jobs" subtitle="Aktive und wartende Sync-Jobs">
 	{#snippet actions()}
 		<div class="flex items-center gap-3">
 			{#if runningCount > 0 || queuedCount > 0}
@@ -413,6 +443,39 @@
 
 <!-- Jobs Table -->
 <Card>
+	<div class="flex flex-wrap items-center gap-2 mb-5">
+		<button
+			type="button"
+			onclick={() => (activeTab = 'products')}
+			class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border
+				{activeTab === 'products'
+					? 'bg-royal-600/20 border-royal-500/40 text-royal-300'
+					: 'bg-white/5 border-white/10 text-gray-400 hover:text-gray-200'}"
+		>
+			Produkt Jobs
+		</button>
+		<button
+			type="button"
+			onclick={() => (activeTab = 'customers')}
+			class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border
+				{activeTab === 'customers'
+					? 'bg-royal-600/20 border-royal-500/40 text-royal-300'
+					: 'bg-white/5 border-white/10 text-gray-400 hover:text-gray-200'}"
+		>
+			Debitoren Jobs
+		</button>
+		<button
+			type="button"
+			onclick={() => (activeTab = 'transactions')}
+			class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border
+				{activeTab === 'transactions'
+					? 'bg-royal-600/20 border-royal-500/40 text-royal-300'
+					: 'bg-white/5 border-white/10 text-gray-400 hover:text-gray-200'}"
+		>
+			Transaktionen
+		</button>
+	</div>
+
 	<!-- Filter controls -->
 	<div class="flex flex-wrap items-center gap-3 mb-5">
 		<div class="relative flex-1 min-w-[200px] max-w-xs">
@@ -436,7 +499,7 @@
 			Nur Fehler
 		</button>
 		{#if skuSearch || showErrorsOnly}
-			<span class="text-xs text-gray-500">{filteredJobs.length} / {activeJobs.length}</span>
+			<span class="text-xs text-gray-500">{filteredJobs.length} / {tabJobs.length}</span>
 		{/if}
 	</div>
 
@@ -444,11 +507,11 @@
 		<div class="flex justify-center py-16">
 			<Loader2 size={32} class="animate-spin text-royal-400" />
 		</div>
-	{:else if activeJobs.length === 0}
+	{:else if tabJobs.length === 0}
 		<div class="text-center py-16 text-gray-400">
 			<PackageSearch size={48} class="mx-auto mb-4 opacity-40" />
-			<p class="font-medium mb-1">Keine aktiven Jobs</p>
-			<p class="text-sm text-gray-500">Jobs erscheinen hier sobald ein Produkt-Sync gestartet wird</p>
+			<p class="font-medium mb-1">Keine Jobs in diesem Tab</p>
+			<p class="text-sm text-gray-500">Sobald hier neue Vorgänge laufen, erscheinen sie in dieser Ansicht</p>
 		</div>
 	{:else}
 		<div class="overflow-x-auto">
