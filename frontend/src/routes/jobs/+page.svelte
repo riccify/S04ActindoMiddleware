@@ -285,7 +285,7 @@
 			if (skuSearch.trim() && !j.sku.toLowerCase().includes(skuSearch.trim().toLowerCase()))
 				return false;
 			return true;
-		})
+		}).toSorted((a, b) => new Date(b.queuedAt).getTime() - new Date(a.queuedAt).getTime())
 	);
 
 	let totalPages = $derived(Math.max(1, Math.ceil(filteredJobs.length / PAGE_SIZE)));
