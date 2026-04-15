@@ -52,11 +52,11 @@ public sealed record ActindoProductDetails
 public sealed class ActindoProductListService
 {
     private const int ProductListPageSize = 250;
+    private const int VariantsListBatchSize = 100;
     private readonly HttpClient _httpClient;
     private readonly IAuthenticationService _authService;
     private readonly IActindoEndpointProvider _endpoints;
     private readonly ILogger<ActindoProductListService> _logger;
-    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
     public ActindoProductListService(
         HttpClient httpClient,
@@ -322,6 +322,61 @@ public sealed class ActindoProductListService
         return ids;
     }
 
+    public async Task<IReadOnlyDictionary<int, IReadOnlyList<int>>> GetVariantChildrenByMasterIdsAsync(
+        IEnumerable<int> masterIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(masterIds);
+
+        var distinctIds = masterIds
+            .Where(id => id > 0)
+            .Distinct()
+            .ToArray();
+
+        if (distinctIds.Length == 0)
+            return new Dictionary<int, IReadOnlyList<int>>();
+
+        var endpoints = await _endpoints.GetAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(endpoints.GetVariantsList))
+        {
+            _logger.LogWarning("GetVariantsList endpoint is not configured.");
+            return new Dictionary<int, IReadOnlyList<int>>();
+        }
+
+        var token = await _authService.GetValidAccessTokenAsync(cancellationToken);
+        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var result = new Dictionary<int, IReadOnlyList<int>>();
+
+        foreach (var batch in Chunk(distinctIds, VariantsListBatchSize))
+        {
+            var payload = new { ids = batch };
+            using var response = await _httpClient.PostAsJsonAsync(endpoints.GetVariantsList, payload, cancellationToken);
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Actindo variants list failed {Status}: {Content}", (int)response.StatusCode, content);
+                throw new InvalidOperationException($"Actindo variants list failed ({(int)response.StatusCode}): {content}");
+            }
+
+            using var doc = JsonDocument.Parse(content);
+            if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+                continue;
+
+            foreach (var item in data.EnumerateArray())
+            {
+                var masterId = TryReadInt(item, "id");
+                if (!masterId.HasValue)
+                    continue;
+
+                result[masterId.Value] = ReadChildrenIds(item);
+            }
+        }
+
+        return result;
+    }
+
     private async Task<List<ActindoProductData>> FetchProductElementsAsync(CancellationToken cancellationToken)
     {
         var endpoints = await _endpoints.GetAsync(cancellationToken);
@@ -405,6 +460,43 @@ public sealed class ActindoProductListService
             return parsed;
 
         return null;
+    }
+
+    private static IReadOnlyList<int> ReadChildrenIds(JsonElement element)
+    {
+        if (!element.TryGetProperty("_pim_variants", out var variants) ||
+            variants.ValueKind != JsonValueKind.Object ||
+            !variants.TryGetProperty("childrenIds", out var childrenObj) ||
+            childrenObj.ValueKind != JsonValueKind.Object)
+        {
+            return Array.Empty<int>();
+        }
+
+        var childrenIds = new List<int>();
+        foreach (var child in childrenObj.EnumerateObject())
+        {
+            if (child.Value.TryGetInt32(out var childId))
+            {
+                childrenIds.Add(childId);
+            }
+        }
+
+        return childrenIds;
+    }
+
+    private static IEnumerable<int[]> Chunk(IReadOnlyList<int> source, int size)
+    {
+        for (var index = 0; index < source.Count; index += size)
+        {
+            var length = Math.Min(size, source.Count - index);
+            var batch = new int[length];
+            for (var i = 0; i < length; i++)
+            {
+                batch[i] = source[index + i];
+            }
+
+            yield return batch;
+        }
     }
 
     private static string GetFirstNonEmpty(JsonElement element, params string[] propertyNames)

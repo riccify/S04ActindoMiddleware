@@ -19,6 +19,7 @@ public sealed class ActindoEndpointSet
     public required string GetProductList { get; init; }
     public required string DeleteProduct { get; init; }
     public required string GetProduct { get; init; }
+    public required string GetVariantsList { get; init; }
 
     public static ActindoEndpointSet FromDictionary(IDictionary<string, string> values, string? actindoBaseUrl)
     {
@@ -44,7 +45,8 @@ public sealed class ActindoEndpointSet
             ProductFilesSave = Build("PRODUCT_FILES_SAVE", ActindoEndpoints.PRODUCT_FILES_SAVE),
             GetProductList = Build("GET_PRODUCT_LIST", ActindoEndpoints.GET_PRODUCT_LIST),
             DeleteProduct = Build("DELETE_PRODUCT", ActindoEndpoints.DELETE_PRODUCT),
-            GetProduct = Build("GET_PRODUCT", ActindoEndpoints.GET_PRODUCT)
+            GetProduct = Build("GET_PRODUCT", ActindoEndpoints.GET_PRODUCT),
+            GetVariantsList = Build("GET_VARIANTS_LIST", ActindoEndpoints.GET_VARIANTS_LIST)
         };
     }
 

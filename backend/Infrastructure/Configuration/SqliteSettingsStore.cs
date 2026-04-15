@@ -163,7 +163,9 @@ CREATE TABLE IF NOT EXISTS Settings (
         ["CREATE_FILE"] = ActindoEndpoints.CREATE_FILE,
         ["PRODUCT_FILES_SAVE"] = ActindoEndpoints.PRODUCT_FILES_SAVE,
         ["GET_PRODUCT_LIST"] = ActindoEndpoints.GET_PRODUCT_LIST,
-        ["DELETE_PRODUCT"] = ActindoEndpoints.DELETE_PRODUCT
+        ["DELETE_PRODUCT"] = ActindoEndpoints.DELETE_PRODUCT,
+        ["GET_PRODUCT"] = ActindoEndpoints.GET_PRODUCT,
+        ["GET_VARIANTS_LIST"] = ActindoEndpoints.GET_VARIANTS_LIST
     };
 
     private static Dictionary<string, string> MergeWithDefaults(IDictionary<string, string>? current, string? actindoBaseUrl)

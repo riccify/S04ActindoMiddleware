@@ -29,4 +29,6 @@ public static class ActindoEndpoints
     public const string DELETE_PRODUCT = "";
 
     public const string GET_PRODUCT = "";
+
+    public const string GET_VARIANTS_LIST = "";
 }
