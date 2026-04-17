@@ -17,6 +17,7 @@ Der FC Schalke 04 e.V. nutzt Microsoft Dynamics NAV als zentrales ERP-System fue
 Aufgrund von Lizenzkosten, fehlenden Funktionen und besserer Integration mit der bestehenden Infrastruktur hat sich das Unternehmen entschieden, das Kassensystem von Shopware auf Actindo zu wechseln. Actindo bietet eine moderne REST-API mit OAuth2-Authentifizierung und ist speziell fuer den Einzelhandel optimiert.
 
 Die bestehende Shopware-Middleware kann nicht fuer Actindo wiederverwendet werden, da:
+
 - Actindo eine vollstaendig andere API-Struktur verwendet
 - Die Authentifizierung ueber OAuth2 statt API-Keys erfolgt
 - Die Datenformate und Feldmappings unterschiedlich sind
@@ -43,6 +44,7 @@ Ziel des Projekts ist die Entwicklung einer Middleware, die als Vermittler zwisc
 5. **Web-Frontend**: Benutzerfreundliche Oberflaeche zur Statusueberwachung und Administration
 
 Der wirtschaftliche Nutzen fuer das Unternehmen:
+
 - Reibungsloser Wechsel vom alten auf das neue Kassensystem
 - Reduzierung manueller Pflegeaufwaende um ca. 80%
 - Vermeidung von Datendiskrepanzen zwischen den Systemen
@@ -64,6 +66,7 @@ Im Rahmen dieses Projekts werde ich folgende Taetigkeiten eigenstaendig durchfue
 - Erstellung der Projektdokumentation
 
 **Nicht Teil meiner Leistung:**
+
 - Die Actindo API wird als bestehende Schnittstelle genutzt
 - Die Server-Infrastruktur wird vom Unternehmen bereitgestellt
 - Die alte Shopware-Middleware wird nicht von mir betreut
@@ -71,16 +74,19 @@ Im Rahmen dieses Projekts werde ich folgende Taetigkeiten eigenstaendig durchfue
 ### Schnittstellen
 
 1. **Actindo REST API**
+   
    - OAuth2-Authentifizierung
    - Endpoints fuer Produkte, Kunden, Inventar, Preise, Transaktionen
    - JSON-Datenformat
 
 2. **NAV REST API**
+   
    - Bearer-Token-Authentifizierung
    - Endpoints fuer ID-Synchronisation (Product-IDs, Customer-IDs)
    - JSON-Datenformat
 
 3. **SQLite-Datenbank**
+   
    - Lokale Speicherung von Jobs, Produkten, Einstellungen, Benutzern
 
 ### Bereitgestellte Hard- und Software
@@ -104,6 +110,7 @@ Das Projekt wird **betriebsintern** in der IT-Abteilung des FC Schalke 04 e.V. d
 **Oertlichkeit:** Gelsenkirchen, Deutschland (Buero und Homeoffice)
 
 **Technisches Umfeld:**
+
 - Betriebssystem Server: Linux (Debian-basiert)
 - Betriebssystem Entwicklung: Windows 11
 - Programmiersprachen: C# (.NET 10), TypeScript, C/AL (NAV), SQL
@@ -113,6 +120,7 @@ Das Projekt wird **betriebsintern** in der IT-Abteilung des FC Schalke 04 e.V. d
 - Versionskontrolle: Git/GitHub
 
 **Bestehende Systeme:**
+
 - Microsoft Dynamics NAV (ERP)
 - Shopware (altes Kassensystem, wird abgeloest)
 - Actindo POS (neues Kassensystem)
@@ -122,39 +130,39 @@ Das Projekt wird **betriebsintern** in der IT-Abteilung des FC Schalke 04 e.V. d
 
 ## 4. Projektphasen
 
-| Phase | Taetigkeit | Stunden |
-|-------|------------|---------|
-| **1. Analyse** | | **8** |
-| | IST-Analyse der bestehenden Systeme | 3 |
-| | Anforderungsanalyse mit Fachabteilung | 3 |
-| | Analyse der Actindo und NAV APIs | 2 |
-| **2. Planung** | | **10** |
-| | Erstellung des Pflichtenhefts | 4 |
-| | Architekturentwurf und Technologieauswahl | 3 |
-| | Datenbankdesign | 2 |
-| | Zeitplanung und Meilensteine | 1 |
-| **3. Implementierung** | | **40** |
-| | Backend: Grundstruktur und Authentifizierung | 6 |
-| | Backend: Actindo-Integration (OAuth, API-Client) | 8 |
-| | Backend: Produkt- und Kunden-Synchronisation | 8 |
-| | Backend: Job-Monitoring und Fehlerbehandlung | 4 |
-| | NAV: Codeunits und Buffer-Logik | 6 |
-| | Frontend: Dashboard und Produktuebersicht | 4 |
-| | Frontend: Admin-Bereich (Settings, Users) | 4 |
-| **4. Test** | | **8** |
-| | Komponententests | 3 |
-| | Integrationstests mit Testsystemen | 3 |
-| | Abnahmetests mit Fachabteilung | 2 |
-| **5. Deployment** | | **4** |
-| | Docker-Containerisierung | 2 |
-| | Deployment auf Produktivserver | 1 |
-| | Konfiguration und Inbetriebnahme | 1 |
-| **6. Dokumentation** | | **10** |
-| | Projektdokumentation | 7 |
-| | Benutzerhandbuch | 2 |
-| | Technische Dokumentation | 1 |
-| | | |
-| **Gesamt** | | **80** |
+| Phase                  | Taetigkeit                                       | Stunden |
+| ---------------------- | ------------------------------------------------ | ------- |
+| **1. Analyse**         |                                                  | **8**   |
+|                        | IST-Analyse der bestehenden Systeme              | 3       |
+|                        | Anforderungsanalyse mit Fachabteilung            | 3       |
+|                        | Analyse der Actindo und NAV APIs                 | 2       |
+| **2. Planung**         |                                                  | **10**  |
+|                        | Erstellung des Pflichtenhefts                    | 4       |
+|                        | Architekturentwurf und Technologieauswahl        | 3       |
+|                        | Datenbankdesign                                  | 2       |
+|                        | Zeitplanung und Meilensteine                     | 1       |
+| **3. Implementierung** |                                                  | **40**  |
+|                        | Backend: Grundstruktur und Authentifizierung     | 6       |
+|                        | Backend: Actindo-Integration (OAuth, API-Client) | 8       |
+|                        | Backend: Produkt- und Kunden-Synchronisation     | 8       |
+|                        | Backend: Job-Monitoring und Fehlerbehandlung     | 4       |
+|                        | NAV: Codeunits und Buffer-Logik                  | 6       |
+|                        | Frontend: Dashboard und Produktuebersicht        | 4       |
+|                        | Frontend: Admin-Bereich (Settings, Users)        | 4       |
+| **4. Test**            |                                                  | **8**   |
+|                        | Komponententests                                 | 3       |
+|                        | Integrationstests mit Testsystemen               | 3       |
+|                        | Abnahmetests mit Fachabteilung                   | 2       |
+| **5. Deployment**      |                                                  | **4**   |
+|                        | Docker-Containerisierung                         | 2       |
+|                        | Deployment auf Produktivserver                   | 1       |
+|                        | Konfiguration und Inbetriebnahme                 | 1       |
+| **6. Dokumentation**   |                                                  | **10**  |
+|                        | Projektdokumentation                             | 7       |
+|                        | Benutzerhandbuch                                 | 2       |
+|                        | Technische Dokumentation                         | 1       |
+|                        |                                                  |         |
+| **Gesamt**             |                                                  | **80**  |
 
 ---
 
@@ -163,6 +171,7 @@ Das Projekt wird **betriebsintern** in der IT-Abteilung des FC Schalke 04 e.V. d
 Die Projektdokumentation wird prozessorientiert nach dem Wasserfall-Modell strukturiert und umfasst:
 
 **Hauptdokumentation:**
+
 1. Deckblatt und Inhaltsverzeichnis
 2. Einleitung und Projektumfeld
 3. Analyse (IST-Zustand, Anforderungen)
@@ -174,6 +183,7 @@ Die Projektdokumentation wird prozessorientiert nach dem Wasserfall-Modell struk
 9. Glossar und Abkuerzungsverzeichnis
 
 **Anlagen:**
+
 - Pflichtenheft
 - ER-Diagramm der Datenbank
 - API-Dokumentation
@@ -192,11 +202,9 @@ Die Projektdokumentation wird prozessorientiert nach dem Wasserfall-Modell struk
 
 ## 7. Projektbetreuer/-in
 
-**Name:** [VORNAME] [NACHNAME]
+**Name:** Tim Frank
 
-**Telefon:** [TELEFONNUMMER]
-
-**E-Mail:** [EMAIL]
+**E-Mail:** tim.frank@schalke04.de
 
 **Betrieb:** FC Schalke 04 e.V.
 
