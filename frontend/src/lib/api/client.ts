@@ -144,6 +144,12 @@ export const products = {
 			body: JSON.stringify(data)
 		}),
 
+	setVariants: (data: { productId: number; variantSetId: number; childrenIds: number[] }) =>
+		request<unknown>('/api/products/set-variants', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		}),
+
 	activeJobs: () => request<ProductJobListItem[]>('/api/actindo/products/active-jobs'),
 
 	job: (jobId: string) =>

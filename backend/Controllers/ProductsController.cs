@@ -44,11 +44,11 @@ public sealed class ProductsController : ControllerBase
 
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<ProductListItemDto>>> Get(
-        [FromQuery] int limit = 200,
+        [FromQuery] int limit = 5000,
         [FromQuery] bool includeVariants = false,
         CancellationToken cancellationToken = default)
     {
-        limit = Math.Clamp(limit, 1, 500);
+        limit = Math.Clamp(limit, 1, 5000);
         var items = await _metricsService.GetCreatedProductsAsync(limit, includeVariants, cancellationToken);
         return Ok(items.Select(MapToDto));
     }
@@ -280,6 +280,56 @@ public sealed class ProductsController : ControllerBase
     {
         var settings = await _settingsStore.GetActindoSettingsAsync(cancellationToken);
         return Ok(new { actindoBaseUrl = settings.ActindoBaseUrl });
+    }
+
+    [HttpPost("set-variants")]
+    [Authorize(Policy = AuthPolicies.Write)]
+    public async Task<IActionResult> SetVariants(
+        [FromBody] SetProductVariantsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.ProductId <= 0)
+            return BadRequest("productId ist erforderlich.");
+
+        if (request.ChildrenIds == null || request.ChildrenIds.Count == 0)
+            return BadRequest("childrenIds duerfen nicht leer sein.");
+
+        var distinctChildrenIds = request.ChildrenIds
+            .Where(id => id > 0)
+            .Distinct()
+            .ToArray();
+
+        if (distinctChildrenIds.Length == 0)
+            return BadRequest("childrenIds muessen gueltige IDs enthalten.");
+
+        var endpoints = await _endpointProvider.GetAsync(cancellationToken);
+        var payload = new
+        {
+            product = new
+            {
+                id = request.ProductId,
+                _pim_variants = new
+                {
+                    variantSetId = request.VariantSetId > 0 ? request.VariantSetId : 21,
+                    isMasterEntity = true,
+                    childrenIds = distinctChildrenIds
+                }
+            }
+        };
+
+        try
+        {
+            var response = await _actindoClient.PostAsync(
+                endpoints.SaveProduct,
+                payload,
+                cancellationToken);
+
+            return Ok(response);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status502BadGateway, new { error = ex.Message });
+        }
     }
 
     private static ProductListItemDto MapToDto(ProductListItem p) => new()

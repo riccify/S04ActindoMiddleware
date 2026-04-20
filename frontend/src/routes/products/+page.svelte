@@ -11,6 +11,7 @@
 	import Badge from '$components/ui/Badge.svelte';
 	import Alert from '$components/ui/Alert.svelte';
 	import Spinner from '$components/ui/Spinner.svelte';
+	import Modal from '$components/ui/Modal.svelte';
 
 	function formatPrice(price: number | null): string {
 		if (price === null) return '-';
@@ -53,13 +54,19 @@
 	}
 
 	// Toast notifications
-	interface Toast { id: number; message: string; }
+	interface Toast { id: number; message: string; kind: 'error' | 'success'; }
 	let toasts = $state<Toast[]>([]);
 	let _toastId = 0;
 
 	function showErrorToast(message: string) {
 		const id = ++_toastId;
-		toasts = [...toasts, { id, message }];
+		toasts = [...toasts, { id, message, kind: 'error' }];
+		setTimeout(() => { toasts = toasts.filter((t) => t.id !== id); }, 5000);
+	}
+
+	function showSuccessToast(message: string) {
+		const id = ++_toastId;
+		toasts = [...toasts, { id, message, kind: 'success' }];
 		setTimeout(() => { toasts = toasts.filter((t) => t.id !== id); }, 5000);
 	}
 
@@ -97,6 +104,11 @@
 	let stockModalLoading = $state(false);
 	let stockModalStocks: ProductStockItem[] = $state([]);
 	let stockModalTotal = $derived(stockModalStocks.reduce((sum, s) => sum + s.stock, 0));
+	let variantsModalOpen = $state(false);
+	let variantsModalProduct = $state<ProductListItem | null>(null);
+	let variantsModalChildrenIds = $state('');
+	let variantsModalVariantSetId = $state('21');
+	let variantsModalSaving = $state(false);
 
 	async function openStockModal(sku: string) {
 		stockModalSku = sku;
@@ -116,6 +128,58 @@
 		stockModalOpen = false;
 		stockModalSku = '';
 		stockModalStocks = [];
+	}
+
+	function openVariantsModal(product: ProductListItem, e: MouseEvent) {
+		e.stopPropagation();
+		variantsModalProduct = product;
+		variantsModalChildrenIds = '';
+		variantsModalVariantSetId = '21';
+		variantsModalOpen = true;
+	}
+
+	function closeVariantsModal() {
+		variantsModalOpen = false;
+		variantsModalProduct = null;
+		variantsModalChildrenIds = '';
+		variantsModalVariantSetId = '21';
+		variantsModalSaving = false;
+	}
+
+	async function submitVariants() {
+		if (!variantsModalProduct?.productId) {
+			showErrorToast('Das Produkt hat keine Actindo ID.');
+			return;
+		}
+
+		const childrenIds = variantsModalChildrenIds
+			.split(',')
+			.map((value) => parseInt(value.trim(), 10))
+			.filter((value) => Number.isFinite(value) && value > 0);
+
+		if (childrenIds.length === 0) {
+			showErrorToast('Bitte mindestens eine gueltige Varianten-ID angeben.');
+			return;
+		}
+
+		const variantSetId = parseInt(variantsModalVariantSetId.trim(), 10);
+		variantsModalSaving = true;
+
+		try {
+			await productsApi.setVariants({
+				productId: variantsModalProduct.productId,
+				variantSetId: Number.isFinite(variantSetId) && variantSetId > 0 ? variantSetId : 21,
+				childrenIds
+			});
+			showSuccessToast(`Varianten fuer ${variantsModalProduct.sku} gesetzt`);
+			closeVariantsModal();
+		} catch (err) {
+			let msg = err instanceof Error ? err.message : 'Unbekannter Fehler';
+			try { const parsed = JSON.parse(msg); msg = parsed.details ?? parsed.error ?? msg; } catch { /* not JSON */ }
+			showErrorToast(`Varianten konnten nicht gesetzt werden: ${msg}`);
+		} finally {
+			variantsModalSaving = false;
+		}
 	}
 
 	let filteredProducts = $derived(
@@ -197,7 +261,7 @@
 		error = '';
 		expandedProducts = {};
 		try {
-			products = await productsApi.list();
+			products = await productsApi.list({ limit: 5000 });
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Fehler beim Laden';
 		} finally {
@@ -386,6 +450,11 @@
 						>
 							Erstellt
 						</th>
+						<th
+							class="text-left py-3 px-4 text-xs uppercase tracking-wider text-gray-400 font-medium"
+						>
+							Aktion
+						</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -507,6 +576,18 @@
 							<td class="py-3 px-4 text-sm text-gray-400">
 								{formatDate(product.createdAt)}
 							</td>
+
+							<!-- Aktion -->
+							<td class="py-3 px-4">
+								<Button
+									variant="ghost"
+									size="small"
+									onclick={(e) => openVariantsModal(product, e)}
+									disabled={!product.productId}
+								>
+									Varianten setzen
+								</Button>
+							</td>
 						</tr>
 
 						<!-- Expanded Variants -->
@@ -576,6 +657,7 @@
 									<td class="py-2 px-4 text-sm text-gray-400">
 										{formatDate(variant.createdAt)}
 									</td>
+									<td class="py-2 px-4"></td>
 								</tr>
 							{/each}
 						{/if}
@@ -905,14 +987,67 @@
 	</div>
 {/if}
 
+{#if variantsModalProduct}
+	<Modal
+		bind:open={variantsModalOpen}
+		title="Varianten setzen"
+		class="max-w-xl"
+		onclose={closeVariantsModal}
+	>
+		<div class="space-y-4">
+			<div class="rounded-xl border border-white/10 bg-black/20 p-4">
+				<div class="text-sm text-gray-400">Produkt</div>
+				<div class="mt-1 font-mono text-white">{variantsModalProduct.sku}</div>
+				<div class="mt-1 text-sm text-gray-500">Actindo ID: {variantsModalProduct.productId ?? '-'}</div>
+			</div>
+
+			<div>
+				<label class="label" for="variant-children-ids">Varianten IDs</label>
+				<Input
+					id="variant-children-ids"
+					bind:value={variantsModalChildrenIds}
+					placeholder="123,124,125"
+				/>
+				<p class="mt-1 text-xs text-gray-500">Kommagetrennte Actindo Produkt-IDs der Kinder angeben.</p>
+			</div>
+
+			<div>
+				<label class="label" for="variant-set-id">VariantSet ID</label>
+				<Input
+					id="variant-set-id"
+					bind:value={variantsModalVariantSetId}
+					placeholder="21"
+				/>
+				<p class="mt-1 text-xs text-gray-500">Leer oder ungueltig bedeutet automatisch `21`.</p>
+			</div>
+
+			<div class="flex justify-end gap-3 pt-2">
+				<Button variant="ghost" onclick={closeVariantsModal} disabled={variantsModalSaving}>
+					Abbrechen
+				</Button>
+				<Button onclick={submitVariants} disabled={variantsModalSaving}>
+					{#if variantsModalSaving}
+						<RefreshCw size={16} class="animate-spin" />
+						Speichere...
+					{:else}
+						Varianten setzen
+					{/if}
+				</Button>
+			</div>
+		</div>
+	</Modal>
+{/if}
+
 <!-- Toast Notifications -->
 {#if toasts.length > 0}
 	<div class="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
 		{#each toasts as toast (toast.id)}
 			<div class="flex items-start gap-3 px-4 py-3 rounded-xl shadow-2xl
-				bg-gray-900 border border-red-500/40 text-red-300
+				{toast.kind === 'error'
+					? 'bg-gray-900 border border-red-500/40 text-red-300'
+					: 'bg-gray-900 border border-green-500/40 text-green-300'}
 				min-w-[280px] max-w-[420px] pointer-events-auto">
-				<AlertTriangle size={16} class="text-red-400 shrink-0 mt-0.5" />
+				<AlertTriangle size={16} class="{toast.kind === 'error' ? 'text-red-400' : 'text-green-400'} shrink-0 mt-0.5" />
 				<p class="text-sm leading-snug">{toast.message}</p>
 			</div>
 		{/each}

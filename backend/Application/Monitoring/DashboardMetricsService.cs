@@ -415,6 +415,7 @@ public sealed class DashboardMetricsService : IDashboardMetricsService
 
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
+        await EnsureProductExistsAsync(connection, sku, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -483,6 +484,7 @@ public sealed class DashboardMetricsService : IDashboardMetricsService
 
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
+        await EnsureProductExistsAsync(connection, sku, cancellationToken);
 
         // Update Products table (last stock)
         await using (var command = connection.CreateCommand())
@@ -854,6 +856,37 @@ public sealed class DashboardMetricsService : IDashboardMetricsService
 
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt32(scalar ?? 0);
+    }
+
+    private static async Task EnsureProductExistsAsync(
+        SqliteConnection connection,
+        string sku,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(sku))
+            return;
+
+        await using var existsCommand = connection.CreateCommand();
+        existsCommand.CommandText = "SELECT COUNT(*) FROM Products WHERE Sku = @sku;";
+        existsCommand.Parameters.AddWithValue("@sku", sku);
+
+        var exists = Convert.ToInt32(await existsCommand.ExecuteScalarAsync(cancellationToken) ?? 0) > 0;
+        if (exists)
+            return;
+
+        await using var insertCommand = connection.CreateCommand();
+        insertCommand.CommandText =
+            """
+            INSERT INTO Products (Id, JobId, ActindoProductId, Sku, Name, VariantStatus, ParentSku, VariantCode, CreatedAt)
+            VALUES (@id, @jobId, NULL, @sku, @name, 'single', NULL, NULL, @createdAt);
+            """;
+        insertCommand.Parameters.AddWithValue("@id", Guid.NewGuid().ToString());
+        insertCommand.Parameters.AddWithValue("@jobId", Guid.Empty.ToString());
+        insertCommand.Parameters.AddWithValue("@sku", sku);
+        insertCommand.Parameters.AddWithValue("@name", string.Empty);
+        insertCommand.Parameters.AddWithValue("@createdAt", DateTimeOffset.UtcNow.ToString("o", CultureInfo.InvariantCulture));
+
+        await insertCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static MetricSnapshot BuildMetricSnapshot(int total, IEnumerable<ProductJobInfo> jobs)
