@@ -130,12 +130,46 @@
 		stockModalStocks = [];
 	}
 
-	function openVariantsModal(product: ProductListItem, e: MouseEvent) {
+	function getPrefilledVariantIds(product: ProductListItem): string {
+		const variants = expandedProducts[product.sku] ?? [];
+		return variants
+			.map((variant) => variant.productId)
+			.filter((productId): productId is number => productId !== null)
+			.join(',');
+	}
+
+	async function openVariantsModal(product: ProductListItem, e: MouseEvent) {
 		e.stopPropagation();
 		variantsModalProduct = product;
-		variantsModalChildrenIds = '';
+		variantsModalChildrenIds = getPrefilledVariantIds(product);
 		variantsModalVariantSetId = '21';
 		variantsModalOpen = true;
+
+		if (!expandedProducts[product.sku] && product.variantStatus === 'master') {
+			try {
+				const variants = await productsApi.getVariants(product.sku);
+				const indiVariants = getIndiVariantsForMaster(product.sku);
+				const mergedVariants = [...variants];
+				for (const indiVariant of indiVariants) {
+					if (!mergedVariants.some((variant) => variant.sku.toLowerCase() === indiVariant.sku.toLowerCase())) {
+						mergedVariants.push({
+							...indiVariant,
+							variantStatus: 'child',
+							parentSku: product.sku,
+							variantCode: indiVariant.variantCode ?? 'INDI'
+						});
+					}
+				}
+
+				expandedProducts = { ...expandedProducts, [product.sku]: mergedVariants };
+				variantsModalChildrenIds = mergedVariants
+					.map((variant) => variant.productId)
+					.filter((productId): productId is number => productId !== null)
+					.join(',');
+			} catch (err) {
+				console.error('Failed to prefill variants:', err);
+			}
+		}
 	}
 
 	function closeVariantsModal() {
@@ -585,7 +619,7 @@
 									onclick={(e) => openVariantsModal(product, e)}
 									disabled={!product.productId}
 								>
-									Varianten setzen
+									Varianten
 								</Button>
 							</td>
 						</tr>
@@ -990,7 +1024,7 @@
 {#if variantsModalProduct}
 	<Modal
 		bind:open={variantsModalOpen}
-		title="Varianten setzen"
+		title="Varianten"
 		class="max-w-xl"
 		onclose={closeVariantsModal}
 	>
@@ -1030,7 +1064,7 @@
 						<RefreshCw size={16} class="animate-spin" />
 						Speichere...
 					{:else}
-						Varianten setzen
+						Varianten speichern
 					{/if}
 				</Button>
 			</div>
