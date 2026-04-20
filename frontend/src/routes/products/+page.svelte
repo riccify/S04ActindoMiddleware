@@ -276,10 +276,21 @@
 		const latest = dates.reduce((a, b) => (a! > b! ? a : b))!;
 		const diff = Date.now() - new Date(latest).getTime();
 		const hours = Math.floor(diff / 3600000);
-		if (hours < 1) return 'Vor < 1h';
-		if (hours < 24) return `Vor ${hours}h`;
+		if (hours < 1) return '< 1h';
+		if (hours < 24) return `${hours}h`;
 		const days = Math.floor(hours / 24);
-		return `Vor ${days}T`;
+		return `${days}T`;
+	}
+
+	function formatCompactDate(value: string | null): string {
+		if (!value) return '-';
+		return new Date(value).toLocaleString('de-DE', {
+			day: '2-digit',
+			month: '2-digit',
+			year: '2-digit',
+			hour: '2-digit',
+			minute: '2-digit'
+		});
 	}
 
 	onMount(() => {
@@ -437,55 +448,67 @@
 		</div>
 	{:else}
 		<div class="overflow-x-auto">
-			<table class="w-full">
+			<table class="w-full table-fixed">
+				<colgroup>
+					<col class="w-10" />
+					<col class="w-28" />
+					<col />
+					<col class="w-40" />
+					<col class="w-24" />
+					<col class="w-32" />
+					<col class="w-24" />
+					<col class="w-20" />
+					<col class="w-28" />
+					<col class="w-24" />
+				</colgroup>
 				<thead>
 					<tr class="border-b border-white/10">
 						<th
-							class="text-left py-3 px-4 text-xs uppercase tracking-wider text-gray-400 font-medium w-10"
+							class="text-left py-3 px-3 text-xs uppercase tracking-wider text-gray-400 font-medium"
 						>
 						</th>
 						<th
-							class="text-left py-3 px-4 text-xs uppercase tracking-wider text-gray-400 font-medium"
+							class="text-left py-3 px-3 text-xs uppercase tracking-wider text-gray-400 font-medium"
 						>
 							SKU
 						</th>
 						<th
-							class="text-left py-3 px-4 text-xs uppercase tracking-wider text-gray-400 font-medium"
+							class="text-left py-3 px-3 text-xs uppercase tracking-wider text-gray-400 font-medium"
 						>
 							Name
 						</th>
 						<th
-							class="text-left py-3 px-4 text-xs uppercase tracking-wider text-gray-400 font-medium"
+							class="text-left py-3 px-3 text-xs uppercase tracking-wider text-gray-400 font-medium"
 						>
 							Status
 						</th>
 						<th
-							class="text-left py-3 px-4 text-xs uppercase tracking-wider text-gray-400 font-medium"
+							class="text-left py-3 px-3 text-xs uppercase tracking-wider text-gray-400 font-medium"
 						>
 							Actindo ID
 						</th>
 						<th
-							class="text-right py-3 px-4 text-xs uppercase tracking-wider text-gray-400 font-medium"
+							class="text-right py-3 px-3 text-xs uppercase tracking-wider text-gray-400 font-medium"
 						>
 							Preis
 						</th>
 						<th
-							class="text-right py-3 px-4 text-xs uppercase tracking-wider text-gray-400 font-medium"
+							class="text-right py-3 px-3 text-xs uppercase tracking-wider text-gray-400 font-medium"
 						>
 							Bestand
 						</th>
 						<th
-							class="text-left py-3 px-4 text-xs uppercase tracking-wider text-gray-400 font-medium"
+							class="text-left py-3 px-3 text-xs uppercase tracking-wider text-gray-400 font-medium"
 						>
 							Sync
 						</th>
 						<th
-							class="text-left py-3 px-4 text-xs uppercase tracking-wider text-gray-400 font-medium"
+							class="text-left py-3 px-3 text-xs uppercase tracking-wider text-gray-400 font-medium"
 						>
 							Erstellt
 						</th>
 						<th
-							class="text-left py-3 px-4 text-xs uppercase tracking-wider text-gray-400 font-medium"
+							class="text-left py-3 px-3 text-xs uppercase tracking-wider text-gray-400 font-medium"
 						>
 							Aktion
 						</th>
@@ -501,7 +524,7 @@
 
 						<tr class="border-b border-white/5 hover:bg-white/5 transition-colors">
 							<!-- Expand Button -->
-							<td class="py-3 px-4">
+							<td class="py-3 px-3 align-middle">
 								{#if isMaster && displayVariantCount > 0}
 									<button
 										type="button"
@@ -521,10 +544,10 @@
 							</td>
 
 							<!-- SKU -->
-							<td class="py-3 px-4">
+							<td class="py-3 px-3 align-middle">
 								<div class="flex items-center gap-1.5">
 									<span
-										class="font-mono text-sm {isMaster
+										class="font-mono text-sm whitespace-nowrap {isMaster
 											? 'text-royal-300 font-semibold'
 											: 'text-royal-300'}"
 									>
@@ -544,51 +567,64 @@
 							</td>
 
 							<!-- Name -->
-							<td class="py-3 px-4">
-								{product.name || '-'}
+							<td class="py-3 px-3 align-middle">
+								<div class="text-sm leading-5 text-white break-words">
+									{product.name || '-'}
+								</div>
 							</td>
 
 							<!-- Status -->
-							<td class="py-3 px-4">
-								<div class="flex items-center gap-2">
-									<Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
+							<td class="py-3 px-3 align-middle">
+								<div class="flex flex-wrap items-center gap-1.5">
+									<Badge variant={statusBadge.variant} class="whitespace-nowrap">
+										{statusBadge.label}
+									</Badge>
 									{#if isMaster && displayVariantCount > 0}
-										<Badge variant="info">{displayVariantCount} Varianten</Badge>
+										<Badge
+											variant="info"
+											class="whitespace-nowrap normal-case tracking-normal font-semibold"
+										>
+											{displayVariantCount} Varianten
+										</Badge>
 									{/if}
 								</div>
 							</td>
 
 							<!-- Actindo ID -->
-							<td class="py-3 px-4">
+							<td class="py-3 px-3 align-middle">
 								{#if product.productId}
-									<span class="font-mono text-sm">{product.productId}</span>
+									<span class="font-mono text-sm whitespace-nowrap">{product.productId}</span>
 								{:else}
 									<span class="text-gray-500">-</span>
 								{/if}
 							</td>
 
 							<!-- Preis -->
-							<td class="py-3 px-4 text-right">
+							<td class="py-3 px-3 text-right align-middle">
 								{#if product.lastPrice !== null}
-									<span class="font-mono text-sm text-green-400">{formatPrice(product.lastPrice)}</span>
+									<div class="flex flex-col items-end gap-0.5">
+										<span class="font-mono text-sm text-green-400 whitespace-nowrap">
+											{formatPrice(product.lastPrice)}
+										</span>
 									{#if product.lastPriceEmployee || product.lastPriceMember}
-										<div class="text-xs text-gray-500 mt-0.5">
-											{#if product.lastPriceEmployee}MA: {formatPrice(product.lastPriceEmployee)}{/if}
-											{#if product.lastPriceMember}{product.lastPriceEmployee ? ' / ' : ''}Mit: {formatPrice(product.lastPriceMember)}{/if}
+										<div class="text-[11px] text-gray-500 whitespace-nowrap">
+											{#if product.lastPriceEmployee}MA {formatPrice(product.lastPriceEmployee)}{/if}
+											{#if product.lastPriceMember}{product.lastPriceEmployee ? ' / ' : ''}Mit {formatPrice(product.lastPriceMember)}{/if}
 										</div>
 									{/if}
+									</div>
 								{:else}
 									<span class="text-gray-500">-</span>
 								{/if}
 							</td>
 
 							<!-- Bestand -->
-							<td class="py-3 px-4 text-right">
+							<td class="py-3 px-3 text-right align-middle">
 								{#if product.lastStock !== null}
 									<button
 										type="button"
 										onclick={() => openStockModal(product.sku)}
-										class="font-mono text-sm {product.lastStock > 0 ? 'text-blue-400' : 'text-red-400'} underline decoration-dotted underline-offset-2 hover:decoration-solid cursor-pointer"
+										class="font-mono text-sm whitespace-nowrap {product.lastStock > 0 ? 'text-blue-400' : 'text-red-400'} underline decoration-dotted underline-offset-2 hover:decoration-solid cursor-pointer"
 									>
 										{product.lastStock}
 									</button>
@@ -598,24 +634,29 @@
 							</td>
 
 							<!-- Sync Status -->
-							<td class="py-3 px-4 text-sm text-gray-500">
+							<td class="py-3 px-3 text-sm text-gray-500 align-middle">
 								{#if syncStatusLabel(product)}
-									<span class="text-xs text-gray-500" title="Zuletzt synchronisiert">{syncStatusLabel(product)}</span>
+									<span class="text-xs text-gray-500 whitespace-nowrap" title="Zuletzt synchronisiert">
+										{syncStatusLabel(product)}
+									</span>
 								{:else}
 									<span class="text-gray-600">—</span>
 								{/if}
 							</td>
 
 							<!-- Erstellt -->
-							<td class="py-3 px-4 text-sm text-gray-400">
-								{formatDate(product.createdAt)}
+							<td class="py-3 px-3 text-sm text-gray-400 align-middle">
+								<div class="whitespace-nowrap leading-5">
+									{formatDate(product.createdAt)}
+								</div>
 							</td>
 
 							<!-- Aktion -->
-							<td class="py-3 px-4">
+							<td class="py-3 px-3 align-middle">
 								<Button
 									variant="ghost"
 									size="small"
+									class="whitespace-nowrap px-2.5"
 									onclick={(e) => openVariantsModal(product, e)}
 									disabled={!product.productId}
 								>
@@ -628,8 +669,8 @@
 						{#if isExpanded && expandedProducts[product.sku]}
 							{#each expandedProducts[product.sku] as variant}
 								<tr class="border-b border-white/5 bg-royal-900/20">
-									<td class="py-2 px-4"></td>
-									<td class="py-2 px-4">
+									<td class="py-2.5 px-3"></td>
+									<td class="py-2.5 px-3 align-middle">
 										<div class="flex items-center gap-1.5">
 											<span class="font-mono text-sm text-gray-400 pl-4 whitespace-nowrap">
 												<span class="text-royal-600 mr-1">└</span>
@@ -647,38 +688,43 @@
 											</a>
 										</div>
 									</td>
-									<td class="py-2 px-4">
+									<td class="py-2.5 px-3 align-middle">
 										{#if variant.variantCode}
-											<Badge variant="default" class="font-mono text-xs"
-												>{variant.variantCode}</Badge
+											<Badge
+												variant="default"
+												class="font-mono text-xs whitespace-nowrap normal-case tracking-normal"
 											>
+												{variant.variantCode}
+											</Badge>
 										{:else}
 											<span class="text-gray-500">-</span>
 										{/if}
 									</td>
-									<td class="py-2 px-4">
-										<Badge variant="default">Variante</Badge>
+									<td class="py-2.5 px-3 align-middle">
+										<Badge variant="default" class="whitespace-nowrap">Variante</Badge>
 									</td>
-									<td class="py-2 px-4">
+									<td class="py-2.5 px-3 align-middle">
 										{#if variant.productId}
-											<span class="font-mono text-sm">{variant.productId}</span>
+											<span class="font-mono text-sm whitespace-nowrap">{variant.productId}</span>
 										{:else}
 											<span class="text-gray-500">-</span>
 										{/if}
 									</td>
-									<td class="py-2 px-4 text-right">
+									<td class="py-2.5 px-3 text-right align-middle">
 										{#if variant.lastPrice !== null}
-											<span class="font-mono text-sm text-green-400">{formatPrice(variant.lastPrice)}</span>
+											<span class="font-mono text-sm text-green-400 whitespace-nowrap">
+												{formatPrice(variant.lastPrice)}
+											</span>
 										{:else}
 											<span class="text-gray-500">-</span>
 										{/if}
 									</td>
-									<td class="py-2 px-4 text-right">
+									<td class="py-2.5 px-3 text-right align-middle">
 										{#if variant.lastStock !== null}
 											<button
 												type="button"
 												onclick={() => openStockModal(variant.sku)}
-												class="font-mono text-sm {variant.lastStock > 0 ? 'text-blue-400' : 'text-red-400'} underline decoration-dotted underline-offset-2 hover:decoration-solid cursor-pointer"
+												class="font-mono text-sm whitespace-nowrap {variant.lastStock > 0 ? 'text-blue-400' : 'text-red-400'} underline decoration-dotted underline-offset-2 hover:decoration-solid cursor-pointer"
 											>
 												{variant.lastStock}
 											</button>
@@ -687,11 +733,13 @@
 										{/if}
 									</td>
 									<!-- Sync Status (empty for variants) -->
-									<td class="py-2 px-4"></td>
-									<td class="py-2 px-4 text-sm text-gray-400">
-										{formatDate(variant.createdAt)}
+									<td class="py-2.5 px-3"></td>
+									<td class="py-2.5 px-3 text-sm text-gray-400 align-middle">
+										<div class="whitespace-nowrap leading-5">
+											{formatDate(variant.createdAt)}
+										</div>
 									</td>
-									<td class="py-2 px-4"></td>
+									<td class="py-2.5 px-3"></td>
 								</tr>
 							{/each}
 						{/if}
