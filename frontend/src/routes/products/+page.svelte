@@ -18,6 +18,15 @@
 		return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(price);
 	}
 
+	function formatDateStack(value: string): { date: string; time: string } {
+		const formatted = formatDate(value);
+		const [datePart, timePart] = formatted.split(',').map((part) => part.trim());
+		return {
+			date: datePart || '-',
+			time: timePart || ''
+		};
+	}
+
 	let products: ProductListItem[] = $state([]);
 	let loading = $state(true);
 	let error = $state('');
@@ -521,6 +530,7 @@
 						{@const isMaster = product.variantStatus === 'master'}
 						{@const statusBadge = getVariantStatusBadge(product.variantStatus)}
 						{@const displayVariantCount = getDisplayVariantCount(product)}
+						{@const createdAt = formatDateStack(product.createdAt)}
 
 						<tr class="border-b border-white/5 hover:bg-white/5 transition-colors">
 							<!-- Expand Button -->
@@ -646,8 +656,11 @@
 
 							<!-- Erstellt -->
 							<td class="py-3 px-3 text-sm text-gray-400 align-middle">
-								<div class="whitespace-nowrap leading-5">
-									{formatDate(product.createdAt)}
+								<div class="leading-5">
+									<div class="whitespace-nowrap">{createdAt.date}</div>
+									{#if createdAt.time}
+										<div class="whitespace-nowrap text-gray-500">{createdAt.time}</div>
+									{/if}
 								</div>
 							</td>
 
@@ -668,6 +681,7 @@
 						<!-- Expanded Variants -->
 						{#if isExpanded && expandedProducts[product.sku]}
 							{#each expandedProducts[product.sku] as variant}
+								{@const variantCreatedAt = formatDateStack(variant.createdAt)}
 								<tr class="border-b border-white/5 bg-royal-900/20">
 									<td class="py-2.5 px-3"></td>
 									<td class="py-2.5 px-3 align-middle">
@@ -735,8 +749,13 @@
 									<!-- Sync Status (empty for variants) -->
 									<td class="py-2.5 px-3"></td>
 									<td class="py-2.5 px-3 text-sm text-gray-400 align-middle">
-										<div class="whitespace-nowrap leading-5">
-											{formatDate(variant.createdAt)}
+										<div class="leading-5">
+											<div class="whitespace-nowrap">{variantCreatedAt.date}</div>
+											{#if variantCreatedAt.time}
+												<div class="whitespace-nowrap text-gray-500">
+													{variantCreatedAt.time}
+												</div>
+											{/if}
 										</div>
 									</td>
 									<td class="py-2.5 px-3"></td>
