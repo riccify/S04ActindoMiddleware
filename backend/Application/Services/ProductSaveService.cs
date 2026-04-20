@@ -29,7 +29,7 @@ public sealed class ProductSaveService : ProductSynchronizationService
         return SyncAsync(
             request.Product,
             useSaveEndpoint: true,
-            stripVariantSetInformation: false,
+            stripVariantSetInformation: true,
             cancellationToken);
     }
 }

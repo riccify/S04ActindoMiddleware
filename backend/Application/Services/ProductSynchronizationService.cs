@@ -50,7 +50,11 @@ public abstract class ProductSynchronizationService
             StripVariantSetInformation(product);
 
         foreach (var variant in product.Variants ?? Enumerable.Empty<ProductDto>())
+        {
             NormalizeProductAdditionalProperties(variant);
+            if (stripVariantSetInformation)
+                StripVariantSetInformation(variant);
+        }
 
         var productEndpoint = useSaveEndpoint
             ? endpoints.SaveProduct
