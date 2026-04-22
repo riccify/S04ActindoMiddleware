@@ -355,36 +355,63 @@ public sealed class ActindoProductsController : ControllerBase
 
     private static string? ExtractPriceJobSkuSummary(JsonElement body)
     {
+        static string? GetSummaryLabel((int? actindoId, string? sku, decimal? price, decimal? priceEmployee, decimal? priceMember) data)
+        {
+            if (data.actindoId.HasValue)
+                return data.actindoId.Value.ToString(CultureInfo.InvariantCulture);
+
+            return string.IsNullOrWhiteSpace(data.sku) ? null : data.sku;
+        }
+
+        static bool HasPricePayload((int? actindoId, string? sku, decimal? price, decimal? priceEmployee, decimal? priceMember) data) =>
+            data.actindoId.HasValue ||
+            !string.IsNullOrWhiteSpace(data.sku) ||
+            data.price.HasValue ||
+            data.priceEmployee.HasValue ||
+            data.priceMember.HasValue;
+
+        var topLevelData = body.TryGetProperty("product", out var product)
+            ? ExtractPriceData(product)
+            : ExtractPriceData(body);
+        var topLevelLabel = GetSummaryLabel(topLevelData);
+        var topLevelCount = HasPricePayload(topLevelData) ? 1 : 0;
+
         if (body.TryGetProperty("variant_prices", out var variantPrices) &&
             variantPrices.ValueKind == JsonValueKind.Array &&
             variantPrices.GetArrayLength() > 0)
         {
-            var count = variantPrices.GetArrayLength();
-            string? firstSku = null;
+            var count = topLevelCount;
+            string? firstLabel = topLevelLabel;
             foreach (var variant in variantPrices.EnumerateArray())
             {
-                firstSku = ExtractPriceData(variant).sku;
-                if (!string.IsNullOrWhiteSpace(firstSku))
-                    break;
+                if (IsEmptyObject(variant))
+                    continue;
+
+                count++;
+                firstLabel ??= GetSummaryLabel(ExtractPriceData(variant));
             }
 
-            firstSku ??= "Preis";
-            return count == 1 ? firstSku : $"{firstSku} +{count - 1}";
+            if (count == 0)
+            {
+                var fallbackData = ExtractPriceData(body);
+                var fallbackLabel = GetSummaryLabel(fallbackData);
+                if (!string.IsNullOrWhiteSpace(fallbackLabel))
+                    return fallbackLabel;
+            }
+
+            firstLabel ??= "Preis";
+            return count == 1 ? firstLabel : $"{firstLabel} +{count - 1}";
         }
 
-        if (body.TryGetProperty("product", out var product))
-        {
-            var nestedSku = ExtractPriceData(product).sku;
-            if (!string.IsNullOrWhiteSpace(nestedSku))
-                return nestedSku;
-        }
-
-        return ExtractPriceData(body).sku;
+        return topLevelLabel ?? GetSummaryLabel(ExtractPriceData(body));
     }
 
     private static bool IsIndiVariantCode(string? variantCode) =>
         !string.IsNullOrWhiteSpace(variantCode) &&
         variantCode.Contains("INDI", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsEmptyObject(JsonElement element) =>
+        element.ValueKind == JsonValueKind.Object && !element.EnumerateObject().Any();
 
     private static ProductPriceUpdateItem? ExtractPriceUpdate(JsonObject productNode, int? actindoProductIdOverride = null, string? skuOverride = null)
     {
@@ -1208,12 +1235,46 @@ public sealed class ActindoProductsController : ControllerBase
             SkuSummary = skuSummary
         };
 
+        if (body.TryGetProperty("id", out _) || body.TryGetProperty("_pim_price", out _) ||
+            body.TryGetProperty("_pim_price_employee", out _) || body.TryGetProperty("_pim_price_member", out _))
+        {
+            var masterPayload = StripVariantPrices(body);
+            if (!IsEmptyObject(masterPayload))
+            {
+                var forwarded = new { product = masterPayload, thaw = true };
+                var response = await _actindoClient.PostAsync(
+                    endpoints.SaveProduct,
+                    forwarded,
+                    cancellationToken);
+                result.Results.Add(response);
+
+                var priceData = ExtractPriceData(masterPayload);
+                var skuFromResponse = ExtractSkuFromResponse(response);
+                if (!string.IsNullOrWhiteSpace(skuFromResponse))
+                    priceData = (priceData.actindoId, skuFromResponse, priceData.price, priceData.priceEmployee, priceData.priceMember);
+                if (priceData.actindoId.HasValue || !string.IsNullOrWhiteSpace(priceData.sku))
+                {
+                    result.PriceUpdates.Add(new ProductPriceUpdateItem
+                    {
+                        ActindoProductId = priceData.actindoId,
+                        Sku = priceData.sku,
+                        Price = priceData.price,
+                        PriceEmployee = priceData.priceEmployee,
+                        PriceMember = priceData.priceMember
+                    });
+                }
+            }
+        }
+
         if (body.TryGetProperty("variant_prices", out var variantPrices) &&
             variantPrices.ValueKind == JsonValueKind.Array &&
             variantPrices.GetArrayLength() > 0)
         {
             foreach (var variant in variantPrices.EnumerateArray())
             {
+                if (IsEmptyObject(variant))
+                    continue;
+
                 var forwarded = new { product = variant, thaw = true };
                 var response = await _actindoClient.PostAsync(
                     endpoints.SaveProduct,
@@ -1238,7 +1299,7 @@ public sealed class ActindoProductsController : ControllerBase
                 }
             }
         }
-        else
+        else if (result.Results.Count == 0)
         {
             var forwarded = new { product = body, thaw = true };
             var response = await _actindoClient.PostAsync(
@@ -1265,6 +1326,13 @@ public sealed class ActindoProductsController : ControllerBase
         }
 
         return result;
+    }
+
+    private static JsonElement StripVariantPrices(JsonElement body)
+    {
+        var json = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(body.GetRawText()) ?? new();
+        json.Remove("variant_prices");
+        return JsonSerializer.SerializeToElement(json);
     }
 
     /// <summary>

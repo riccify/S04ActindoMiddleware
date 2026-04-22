@@ -53,6 +53,7 @@
 	let jobLogs = $state<ProductJobLogEntry[]>([]);
 	let logPollInterval: ReturnType<typeof setInterval> | null = null;
 	let jobsWithErrors = $state<Set<string>>(new Set());
+	let jobDetailsById = $state<Record<string, ProductJobInfo>>({});
 
 	// Payload modal state
 	let selectedLogEntry = $state<ProductJobLogEntry | null>(null);
@@ -177,6 +178,51 @@
 		}
 	}
 
+	function parseJsonPayload(raw: string | null): unknown {
+		if (!raw) return null;
+		try {
+			return JSON.parse(raw);
+		} catch {
+			return null;
+		}
+	}
+
+	function isObjectRecord(value: unknown): value is Record<string, unknown> {
+		return typeof value === 'object' && value !== null && !Array.isArray(value);
+	}
+
+	function isPriceProductPayload(product: unknown): product is Record<string, unknown> {
+		return (
+			isObjectRecord(product) &&
+			('_pim_price' in product || '_pim_price_employee' in product || '_pim_price_member' in product)
+		);
+	}
+
+	function getPriceJobContext(job: ProductJobListItem): { masterId: string | null; variantIds: Set<string> } {
+		const detail = jobDetailsById[job.id];
+		const payload = parseJsonPayload(detail?.navRequestPayload ?? null);
+		if (!isObjectRecord(payload)) {
+			return { masterId: null, variantIds: new Set() };
+		}
+
+		const root = isObjectRecord(payload.product) ? payload.product : payload;
+		const masterId = root.id != null ? String(root.id) : null;
+		const variantIds = new Set<string>();
+		const variantPrices = Array.isArray(payload.variant_prices)
+			? payload.variant_prices
+			: Array.isArray(root.variant_prices)
+				? root.variant_prices
+				: [];
+
+		for (const variant of variantPrices) {
+			if (isObjectRecord(variant) && variant.id != null) {
+				variantIds.add(String(variant.id));
+			}
+		}
+
+		return { masterId, variantIds };
+	}
+
 	// --- Log entry metadata parsing ---
 
 	type LogEntryMeta =
@@ -255,6 +301,23 @@
 					req?.products?.[0]?.nav_id != null ? String(req.products[0].nav_id) :
 					productRef;
 				return { type: 'nav', requestType, productRef: navProductRef, navId, actindoId };
+			}
+
+			if (isPriceProductPayload(req?.product)) {
+				const priceContext = getPriceJobContext(job);
+				const requestId = req.product.id != null ? String(req.product.id) : null;
+				const displayValue =
+					req.product.sku != null ? String(req.product.sku) :
+					requestId ??
+					jobSku;
+				const actindoId =
+					requestId ??
+					(res?.product?.id != null ? String(res.product.id) : null);
+				const isMaster =
+					(requestId != null && priceContext.masterId != null && requestId === priceContext.masterId) ||
+					(priceContext.masterId == null && priceContext.variantIds.size === 0);
+
+				return { type: isMaster ? 'master' : 'variant', sku: displayValue, actindoId };
 			}
 
 			if (req?.product?.sku !== undefined) {
@@ -356,6 +419,19 @@
 		}
 	}
 
+	async function ensureJobDetail(jobId: string) {
+		if (jobDetailsById[jobId]) return;
+		try {
+			const detail = await productsApi.job(jobId);
+			jobDetailsById = {
+				...jobDetailsById,
+				[jobId]: detail
+			};
+		} catch {
+			// ignore
+		}
+	}
+
 	function startLogPolling(jobId: string) {
 		stopLogPolling();
 		loadLogs(jobId);
@@ -384,6 +460,7 @@
 		}
 		expandedJobId = job.id;
 		jobLogs = [];
+		await ensureJobDetail(job.id);
 		await tick();
 		startLogPolling(job.id);
 	}
