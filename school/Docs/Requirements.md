@@ -2,317 +2,435 @@
 
 ## Zweck dieses Dokuments
 
-Diese Datei fasst die wichtigsten Anforderungen der IHK Nord Westfalen fuer die betriebliche Projektarbeit im Ausbildungsberuf **Fachinformatiker/in Anwendungsentwicklung** zusammen. Sie dient als praktische Checkliste fuer die spaetere Projektdokumentation zu diesem Projekt:
+Diese Datei fasst die fuer dieses Projekt relevanten Anforderungen aus der offiziellen Handreichung der IHK Nord Westfalen, Pruefungsausschuss IQ1 Gelsenkirchen, zusammen.
+
+Sie dient als Arbeitsgrundlage fuer die spaetere Projektdokumentation zum Projekt:
 
 - **Projekt:** Entwicklung einer Middleware zur Synchronisation zwischen Microsoft Dynamics NAV und Actindo
 - **Repository:** `S04ActindoMiddleware`
 
-Die Zusammenfassung basiert auf der offiziellen Handreichung der IHK Nord Westfalen sowie den allgemeinen rechtlichen Vorgaben der Ausbildungsordnung.
+Wichtig: Diese Zusammenfassung orientiert sich **nicht** an allgemeinen Internet-Hinweisen oder Kurzfassungen, sondern an der lokalen PDF:
 
-## Offizielle Quellen
+- [Handreichung_IHK.pdf](/Users/justi/Documents/workspace/S04ActindoMiddleware/school/Docs/Handreichung_IHK.pdf)
 
-- IHK Nord Westfalen: [Handreichung zur betrieblichen Projektarbeit](https://www.ihk.de/nordwestfalen/bildung/ausbildung/ausbildungsberufe-a-z/handreichung-fachinformatiker-anwendungsentwicklung-6562294)
-- Ausbildungsordnung: [FIAusbV](https://www.gesetze-im-internet.de/fiausbv/)
+Stand der Handreichung:
 
-## 1. Allgemeine Rahmenbedingungen
+- **Version 5.12**
+- **Stand 06/2024**
+- gueltig fuer die Pruefungsperioden ab **Winter 2021**
 
-- Die betriebliche Projektarbeit muss ein **reales betriebliches Projekt** oder ein **klar abgegrenztes Teilprojekt** sein.
-- Die eigene Leistung muss **klar erkennbar** und von den Leistungen anderer Personen **sauber abgegrenzt** werden.
-- Das Projekt muss aus einem passenden **betrieblichen Einsatzgebiet** stammen und den Vorgaben der Ausbildungsordnung entsprechen.
-- Es geht nicht um eine kuenstlich erfundene Aufgabe nur fuer die Pruefung, sondern um eine reale Anforderung aus dem Betrieb.
-- Bewertet wird **nicht primaer das fertige Produkt**, sondern vor allem der **Arbeitsprozess**, also Analyse, Planung, Umsetzung, Test, Begruendung von Entscheidungen und Dokumentation.
+## 1. Geltungsbereich
 
-## 2. Zeitlicher Rahmen
+Die Handreichung gilt fuer:
 
-- Fuer **Durchfuehrung und Dokumentation** stehen insgesamt hoechstens **80 Stunden** zur Verfuegung.
-- Die geplante Bearbeitungszeit darf um bis zu **10 % unterschritten** werden.
-- Projekte mit deutlich zu geringer Stundenzahl oder ueber 80 Stunden sind problematisch und koennen abgelehnt werden.
-- Die Dokumentation selbst sollte typischerweise mit **ca. 10 bis 20 %** der Gesamtzeit eingeplant werden.
+- **Fachinformatiker/in Anwendungsentwicklung**
+- **Fachinformatiker/in Daten- und Prozessanalyse**
 
-## 3. Wichtige Fristen laut IHK Nord Westfalen
+Diese Datei betrachtet nur die Anforderungen fuer:
 
-### Sommerpruefung
+- **Fachinformatiker/in Anwendungsentwicklung**
 
-- Antragsfrist: **31. Januar**
-- Genehmigungszeitraum: **Februar**
-- Durchfuehrungszeitraum: **1. Maerz bis 30. April**
-- Abgabefrist Dokumentation: **30. April**
-- Praesentation/Fachgespraech: **Mai bis Juli**
+## 2. Grundsaetzliche Anforderungen an das Projekt
 
-## 4. Anforderungen an den Projektantrag
+- Das Projekt muss eine **echte betriebliche Aufgabenstellung** aus dem Einsatzgebiet des Prueflings sein.
+- Das Projekt darf **keine kuenstlich fuer die Pruefung erfundene Aufgabe** sein.
+- Es darf **keine Literaturarbeit** sein.
+- Das Projekt kann ein **eigenstaendiges Projekt** oder ein **klar abgegrenztes Teilprojekt** eines groesseren Projekts sein.
+- Bei Teilprojekten muessen die **Schnittstellen zum Gesamtprojekt** deutlich beschrieben werden.
+- Das Projekt ist als **Einzelarbeit** durchzufuehren.
+- Die **eigene Leistung** muss in Projektantrag und Dokumentation klar erkennbar sein.
+- Wenn mehrere Azubis im selben Umfeld arbeiten, muessen die Themen **klar voneinander getrennt** sein.
+- Zu aehnliche Projekte koennen vom Pruefungsausschuss abgelehnt werden.
 
-Der Projektantrag muss vor Projektbeginn ueber das IHK-Online-Portal eingereicht und genehmigt werden. Wichtige Inhalte:
+## 3. Bearbeitungszeit
 
-- Titel der Projektarbeit
-- Detaillierte Projektbeschreibung
-- Ausgangssituation (IST-Zustand)
-- Zielgruppe bzw. Auftraggeber
-- Projektziele und Nutzen (SOLL-Zustand)
-- Klare Abgrenzung der **eigenen Leistung**
-- Beschreibung der eingebundenen **Schnittstellen**
-- Angabe der bereitgestellten **Hard- und Software**
-- Beschreibung des **Projektumfelds**
-- Projektphasen mit sinnvoller Zeitplanung
-- Geplanter Durchfuehrungszeitraum
+Fuer Fachinformatiker/in Anwendungsentwicklung gilt:
 
-Wichtig:
+- maximale Bearbeitungszeit: **80 Stunden**
+- Mindestumfang bei zulaessiger Unterschreitung: **64 Stunden**
+- zulaessige Unterschreitung: **bis zu 20 %**
+- die Projektdokumentation gehoert **zur Bearbeitungszeit dazu**
+- die Projektdokumentation sollte **maximal 15 %** der Bearbeitungszeit ausmachen
 
-- Mit der Durchfuehrung darf erst **nach Genehmigung** des Antrags begonnen werden.
-- Nach PIN-Freigabe ist der Antrag im Portal nicht mehr bearbeitbar.
-- Liegt kein Antrag vor, kann die Leistung mit **0 Punkten / ungenuegend** bewertet werden.
+Orientierungswerte laut Handreichung:
 
-## 5. Formale Anforderungen an die Projektdokumentation
-
-- Einreichung ausschliesslich **online** ueber das IHK-Portal
-- Einreichung als **eine PDF-Datei**
-- Maximale Dateigroesse: **8 MB**
-- Kein Upload mehrerer Dateien
-- Format: **DIN A4**
-- Schriftgroesse Fliesstext: **10 bis 12 Punkt**
-- Jede Seite muss dem Pruefling eindeutig zugeordnet werden koennen
-- Alle Seiten muessen fortlaufend nummeriert sein
-
-### Seitenumfang
-
-- Hauptdokumentation: maximal **15 Seiten**
-- Nicht mitgezaehlt: **Deckblatt**, **Inhaltsverzeichnis**, **Anlagen**
-- Anlagen: insgesamt moeglichst nicht mehr als **30 Seiten**
-
-## 6. Inhaltliche Muss-Bestandteile der Dokumentation
-
-Laut IHK muessen in der Dokumentation mindestens folgende Punkte abgedeckt sein:
-
-- Deckblatt mit:
-  - Name des Prueflings
-  - Ausbildungsberuf
-  - Ausbildungs- oder Umschulungsbetrieb
-  - Titel der Projektarbeit
-- Beschreibung bzw. Konkretisierung des Auftrags
-- Umfassende Beschreibung der **Prozessschritte** und der **erzielten Ergebnisse**
-- Begruendung von Veraenderungen gegenueber dem Projektantrag
-- Wirtschaftliche Betrachtung
-- Darstellung der Massnahmen zur Qualitaetssicherung
-- Falls erforderlich: Anhang mit praxisbezogenen Unterlagen
+- bei 80 Stunden: ca. **12 Stunden** Dokumentation
+- bei 64 Stunden: ca. **10 Stunden** Dokumentation
 
 Wichtig:
 
-- Die Dokumentation soll **prozessorientiert** sein.
-- Sie soll also beschreiben, **wie** du vorgegangen bist, **warum** du Entscheidungen getroffen hast und **wie** du Ergebnisse abgesichert hast.
-- Sie soll **keine wissenschaftliche Abhandlung** sein.
-- Der Anhang soll auf das **notwendige Minimum** begrenzt werden.
-- Quellcode, Skripte oder Konfigurationsdateien muessen **nicht vollstaendig** abgedruckt werden, sondern nur in **relevanten Auszuegen**.
-- Betriebs- und Kundendaten muessen bei Bedarf **anonymisiert** werden.
+- Projektantraege ausserhalb dieses Zeitrahmens werden **nicht genehmigt**
+- auch waehrend der Durchfuehrung ist eine Ueber- oder Unterschreitung **nicht zulaessig**
+- Abweichungen koennen zu einer **Abwertung** fuehren
 
-## 7. Bewertungsschwerpunkte der Projektdokumentation
+## 4. Durchfuehrungszeitraum
 
-Die IHK beschreibt fuer die Dokumentation insbesondere folgende Bewertungsfelder:
+- Das Projekt darf **erst nach Genehmigung** durch den Pruefungsausschuss beginnen.
+- Der Projektbeginn darf **nicht vor Beginn der dritten vollen Maerzwoche** bzw. **nicht vor Beginn der dritten vollen Septemberwoche** liegen.
+- Fuer Durchfuehrung und Dokumentation ist ein **Zeitfenster von sechs Wochen** vorgesehen.
+- Der Dateiupload der Dokumentation muss **spaetestens am letzten Tag des beantragten Durchfuehrungszeitraums** erfolgen.
 
-### 7.1 Gesamtgestaltung
+Wichtig fuer dieses Repository:
 
-- Formale Gestaltung
-- Sprachliche Gestaltung
-- Sinnvolle Nutzung von Fachbegriffen
-- Inhaltsuebersicht mit Seitenangaben
-- Kennzeichnung der Anlagen
-- Ggf. Glossar und Literaturverzeichnis
+- In [Antrag.md](/Users/justi/Documents/workspace/S04ActindoMiddleware/school/Antrag.md) steht aktuell als Zeitraum `03.02.2026 bis 14.02.2026`.
+- Das passt **nicht** zur Handreichung fuer die Sommerpruefung 2026, weil der Projektbeginn dort zu frueh waere.
+- Dieser Punkt muss fuer die finale Doku und alle Pruefungsunterlagen sauber korrigiert oder erklaert werden.
 
-### 7.2 Beschreibung/Konkretisierung des Auftrags
+## 5. Anforderungen an den Projektantrag
 
-- Ausgangslage / IST-Analyse
-- Aufgabenstellung
-- Projektumfeld
-- Schnittstellen / Informationsaustausch
-- Falls relevant: notwendige Aenderungen gegenueber dem Antrag
+Der Projektantrag ist bereits Teil der Abschlusspruefung und wird online ueber das IHK-System eingereicht.
 
-### 7.3 Verstaendlichkeit
+Er muss insbesondere erkennen lassen:
 
-- Das Projekt muss auch fuer **fachfremdere Pruefer** nachvollziehbar sein.
-- Branchenspezifische oder firmeninterne Begriffe sollten erklaert werden.
-- Organisatorische Einbettung und Rahmenbedingungen muessen erkennbar sein.
+- ausreichenden **Schwierigkeitsgrad**
+- sinnvolle **Gliederung in Teilschritte**
+- nachvollziehbare **Zeitplanung**
+- klar erkennbare **eigene Programmierleistung**
+- deutliche **Abgrenzung zu vorhandenen Komponenten**, Frameworks oder Tools
+- sinnvolle Beschreibung des **Projektumfelds**
+- passende und projektbezogene Nennung der **Entwicklungswerkzeuge**
+- erkennbaren Einsatz von **Projektmanagementmethodik**
 
-### 7.4 Qualitaetssicherung
+Nicht sinnvoll ist:
 
-- Qualitaetskriterien fuer die Software definieren
-- Testkonzept und Testszenarien darstellen
-- Meilensteine oder Kontrollpunkte beschreiben
-- Nachweisen, wie du ueberprueft hast, ob die Zielsetzung erreicht wurde
+- alle verfuegbaren Tools einfach aufzulisten
+- selbstverstaendliche Office-Programme unnoetig aufzufuehren
 
-### 7.5 Beschreibung der Projektphasen und Ergebnisse
+Wenn der Antrag Auflagen oder Hinweise enthaelt:
 
-Das ist einer der wichtigsten Bewertungsbereiche. Erwartet werden:
+- diese sind spaeter bei der Durchfuehrung und Dokumentation zu beachten
+- eine Nichtbeachtung fuehrt zu **deutlicher Abwertung**
 
-- Zeitaufwand pro Projektphase
-- Beschreibung der Vorgehensweise und Methodik
-- Aufgetretene Probleme und deren Loesungen
-- Begruendungen fuer technische und organisatorische Entscheidungen
-- Darstellung der Ergebnisse
-- Abweichungen vom erwarteten Ergebnis mit Begruendung
-- Hinweise zu beigelegten praxisbezogenen Unterlagen
+## 6. Genehmigungsverfahren
 
-### 7.6 Wirtschaftliche Betrachtung
+Ein Projektantrag kann:
 
-- Das Projekt muss kurz, aber nachvollziehbar wirtschaftlich betrachtet werden.
-- Zum Beispiel:
-  - Zeitersparnis
-  - Reduzierung manueller Arbeit
-  - Vermeidung von Fehlerkosten
-  - Einfache Kosten-Nutzen-Betrachtung
+1. genehmigt werden
+2. genehmigt werden mit **Hinweisen/Auflagen**
+3. abgelehnt werden mit der Aufforderung zur Ueberarbeitung oder Neueinreichung
 
-### 7.7 Praxisbezogene Unterlagen
+Wichtig:
 
-Geeignet sind z. B.:
+- Erst **nach Genehmigung** darf begonnen werden.
+- Bei wesentlichen inhaltlichen oder zeitlichen Aenderungen waehrend des Projekts ist **sofort Kontakt zur IHK** aufzunehmen.
+- Wird ein ueberarbeiteter oder neuer Antrag erneut abgelehnt, kann das zu **ungenuegend** im Pruefungsteil 2-A fuehren.
 
-- Ausschnitte aus Quellcode
-- Testprotokolle
-- Datenbankmodell / ER-Diagramm
-- UML-Diagramme
-- Masken- oder UI-Screenshots
-- Konfigurationsbeispiele
-- Benutzer- oder Admin-Dokumentation
+## 7. Was die Projektdokumentation laut IHK leisten muss
 
-## 8. Anforderungen an Praesentation und Fachgespraech
+Die Projektdokumentation ist die schriftliche Niederlegung saemtlicher Arbeitsschritte des Projekts.
 
-- Gesamtzeit: maximal **30 Minuten**
-- Praesentation: maximal **15 Minuten**
-- Danach Fachgespraech
-- Die Gestaltung von Praesentationsunterlagen zaehlt **nicht** zur 80-Stunden-Bearbeitungszeit der Projektarbeit.
+Sie soll zeigen, dass der Pruefling:
 
-Bewertet werden insbesondere:
+- Arbeitsablaeufe und Teilaufgaben selbststaendig plant
+- wirtschaftliche, technische, organisatorische und zeitliche Vorgaben beruecksichtigt
+- zielgruppengerecht umsetzt
+- zielgruppengerecht dokumentiert
 
-- Aufbau und inhaltliche Struktur
-- Zielorientierung und logische Gliederung
-- Praesentationstechnik und Visualisierung
-- Kommunikative Kompetenz
-- Fachliche Kompetenz
-- Begruendung der Vorgehensweise
-- Sichere Verwendung von Fachbegriffen
+Bewertet werden:
 
-Wichtig fuer die Vorbereitung:
+- der **Arbeitsprozess**
+- die **getroffenen Entscheidungen**
+- das **Ergebnis**
+- die **praxisbezogenen Unterlagen**
 
-- Die Praesentation muss klar strukturiert und adressatengerecht sein.
-- Du solltest technische Entscheidungen begruenden koennen.
-- Du solltest Probleme, Alternativen und Abwaegungen erklaeren koennen.
-- Du solltest dein Projekt nicht nur zeigen, sondern auch fachlich verteidigen koennen.
-- Du bist selbst fuer die Funktionsfaehigkeit deiner Praesentationsmittel verantwortlich.
+Die Dokumentation soll:
 
-## 8.1 Gewichtung in der Abschlusspruefung
+- **handlungsorientiert**
+- **kundenorientiert**
+- **prozessorientiert**
 
-Laut Ausbildungsordnung hat der Projektteil eine sehr hohe Bedeutung:
+sein und **keine wissenschaftliche Abhandlung** darstellen.
 
-- AP Teil 1: Einrichten eines IT-gestuetzten Arbeitsplatzes: **20 %**
-- AP Teil 2: Planen und Umsetzen eines Softwareprojektes: **50 %**
-- Innerhalb dieses Projektteils:
-  - Projektdokumentation: **50 %**
-  - Praesentation und Fachgespraech: **50 %**
-- AP Teil 2: Planen eines Softwareproduktes: **10 %**
-- AP Teil 2: Entwicklung und Umsetzung von Algorithmen: **10 %**
-- AP Teil 2: Wirtschafts- und Sozialkunde: **10 %**
+Ein reines Projekttagebuch reicht **nicht** aus.
 
-## 8.2 Bestehensregelung
+## 8. Umfang der Dokumentation
 
-Die Abschlusspruefung ist bestanden, wenn:
+Fuer Fachinformatiker/in Anwendungsentwicklung erwartet die Handreichung:
 
-- das Gesamtergebnis aus AP Teil 1 und AP Teil 2 mindestens **ausreichend** ist,
-- das Ergebnis von AP Teil 2 mindestens **ausreichend** ist,
-- in mindestens **drei Pruefungsbereichen** von AP Teil 2 mindestens **ausreichend** erreicht wird,
-- und in **keinem** Pruefungsbereich von AP Teil 2 die Note **ungenuegend** vorliegt.
+- **19 bis 21 Seiten** eigentliche Projektdokumentation
+- zusaetzlich **Deckblatt**
+- zusaetzlich **1 bis 2 Seiten Inhaltsverzeichnis / Gliederung inklusive Anlagenuebersicht**
+- zusaetzlich **Anhang**
+- insgesamt in der Regel **ca. 50 Seiten**
 
-## 9. KI-Nutzung laut IHK
+Fuer die Anlagen gilt:
 
-Die IHK Nord Westfalen macht hierzu konkrete Vorgaben:
+- typischer Umfang: **ca. 30 Seiten**
+- deutliche Ueberschreitungen nur mit guter Begruendung
 
-- KI darf nur als **Assistenzsystem** oder Hilfsmittel genutzt werden.
-- Die **eigene Leistung** muss weiterhin klar erkennbar sein.
-- Inhalte, die mit KI erzeugt wurden, muessen **klar gekennzeichnet** werden.
-- Nicht selbst erstellte Inhalte muessen als **Zitat** markiert und mit Quellen versehen werden.
-- Die verwendete KI-Anwendung muss mit **vollstaendigem Namen und URL** angegeben werden.
-- **Prompts und Antworten** der KI muessen vollstaendig per **Screenshots im Anhang** dokumentiert werden.
-- Reine Rechtschreib- oder Grammatikpruefung ohne inhaltliche Aenderung muss nicht gekennzeichnet werden.
+Damit ist die fruehere Annahme `maximal 15 Seiten Hauptteil` fuer diese Handreichung **nicht richtig**.
 
-Risiko:
+## 9. Zwingender Aufbau der Dokumentation
 
-- Fehlende Kennzeichnung oder fehlende Quellenangaben koennen zur Bewertung **ungenuegend** fuehren.
-
-## 10. Bedeutung fuer dieses konkrete Projekt
-
-Fuer das Projekt `S04ActindoMiddleware` bedeutet das besonders:
-
-- Die Dokumentation muss den **betriebswirtschaftlichen Nutzen** der Middleware klar machen, nicht nur die Technik.
-- Die Abgrenzung deiner eigenen Leistung ist sehr wichtig, weil mehrere Systeme und bestehende Plattformen beteiligt sind:
-  - Microsoft Dynamics NAV
-  - Actindo
-  - Server-/Testinfrastruktur
-  - ggf. Vorgaben aus dem Unternehmen
-- Schnittstellen muessen gut erklaert werden:
-  - NAV
-  - Actindo REST API
-  - OAuth2
-  - lokale SQLite-Datenbank
-  - Frontend/Backend-Kommunikation
-- Der Prozess muss nachvollziehbar bleiben, auch fuer Personen, die weder NAV noch Actindo im Detail kennen.
-- Die Dokumentation sollte nicht nur Features auflisten, sondern Entscheidungen erklaeren, zum Beispiel:
-  - Warum eine Middleware statt Direktanbindung?
-  - Warum diese Architektur?
-  - Warum SQLite, Docker, ASP.NET Core und SvelteKit?
-  - Wie wurden Fehlerbehandlung, Monitoring und Sicherheit umgesetzt?
-- Qualitaetssicherung sollte konkret gezeigt werden:
-  - Testfaelle
-  - Beispielhafte API-Tests
-  - Fehlerfaelle
-  - Absicherung von Authentifizierung und Rollen
-  - Validierung von Synchronisationsablaeufen
-
-## 11. Empfohlene Gliederung fuer deine spaetere Doku
-
-Eine sinnvolle Struktur fuer deine eigentliche Projektdokumentation koennte so aussehen:
+Die Handreichung nennt fuer die Projektdokumentation diese Reihenfolge als zwingend:
 
 1. Deckblatt
-2. Inhaltsverzeichnis
-3. Einleitung
-4. Projektumfeld
-5. IST-Analyse / Ausgangssituation
-6. Zieldefinition / SOLL-Konzept
-7. Anforderungen und Abgrenzung
-8. Projektplanung
-9. Wirtschaftliche Betrachtung
-10. Technische Konzeption
-11. Durchfuehrung / Umsetzung
-12. Test und Qualitaetssicherung
-13. Soll-Ist-Vergleich / Abweichungen
-14. Fazit
-15. Anhang
+2. Inhaltsverzeichnis / Gliederung
+3. Projektdokumentation
+4. bei Bedarf projektbezogenes Glossar, Quellenverzeichnis und weitere Dokumente im Anhang
+5. Erklaerung des Betriebes entsprechend der Vorlage
+6. Ausdruck der Genehmigungsmail
 
-## 12. Praktische Checkliste vor Abgabe
+Wichtig:
 
-- Ist die Dokumentation auf **maximal 15 Seiten** begrenzt?
-- Sind Deckblatt, Inhaltsverzeichnis und Anlagen sauber getrennt?
-- Sind alle Seiten nummeriert?
-- Ist die eigene Leistung klar erkennbar?
-- Ist der Projektablauf prozessorientiert beschrieben?
-- Sind Entscheidungen begruendet?
-- Ist eine wirtschaftliche Betrachtung enthalten?
-- Sind Qualitaetssicherung und Tests dargestellt?
-- Sind relevante Anlagen beigefuegt, aber nicht ueberladen?
-- Sind vertrauliche Daten anonymisiert?
-- Ist die Datei eine **einzige PDF** unter **8 MB**?
-- Sind KI-Inhalte korrekt gekennzeichnet und dokumentiert?
+- Die Anlagen muessen bereits in der Gliederung mit Seitenangaben erfasst sein.
+- Eine Bewertung von Anhangsinhalten erfolgt nur dann, wenn im Fliesstext darauf verwiesen und der Sachverhalt im Hauptteil erklaert wird.
 
-## 13. Wichtiger Hinweis zu deinem vorhandenen Antrag
+## 10. Formale Vorgaben
 
-In `school/Antrag.md` steht aktuell als Durchfuehrungszeitraum:
+### 10.1 Dateiformat und Upload
 
-- **03.02.2026 bis 14.02.2026**
+- Upload ueber das **IHK-Onlinesystem**
+- genau **eine PDF-Datei**
+- **keine** mehreren Dateien
+- maximale Dateigroesse: **4 MB**
 
-Falls dein Projekt zur **Sommerpruefung** gehoert, wuerde das **nicht** zur Handreichung der IHK Nord Westfalen passen, denn dort darf der Durchfuehrungszeitraum erst **ab dem 1. Maerz** beginnen. Das solltest du fuer die finale Doku und fuer deine Unterlagen unbedingt noch gegenpruefen.
+Wichtig:
 
-## 14. Kurzfazit
+- Die alte Angabe `8 MB` ist fuer diese Handreichung **falsch**.
+- Ein verspaeteter Upload gilt als **nicht erbrachte Pruefungsleistung**.
 
-Die IHK erwartet keine reine Produktbeschreibung und auch keinen Codebericht, sondern eine **nachvollziehbare, strukturierte und wirtschaftlich begruendete Darstellung deines Projektvorgehens**. Fuer dein Middleware-Projekt sind daher vor allem folgende Punkte entscheidend:
+### 10.2 Seitennummerierung
 
-- sauber erklaerte Ausgangssituation
-- klare Projektziele
-- nachvollziehbare Architektur- und Technologieentscheidungen
-- erkennbare eigene Leistung
-- konkrete Qualitaetssicherung
-- knappe wirtschaftliche Bewertung
-- verstaendliche Darstellung fuer externe Pruefer
+- Der Projektbericht ist mit **Seite 1 beginnend** zu nummerieren.
+- Deckblatt, Gliederung und Anhaenge werden **gesondert** gezaehlt und ebenfalls nummeriert.
+- Jede Seite muss eindeutig dem Pruefling und der Dokumentation zugeordnet werden koennen.
+
+### 10.3 Textgestaltung
+
+- Erstellung am PC
+- vorgeschriebene Schriftgroesse: **12 Punkt**
+- laut Handreichung entspricht das in etwa **Arial 11**
+- **1,5-zeiliger** Zeilenabstand
+- linker Rand: **2 cm**
+- rechter Rand: **2 cm**
+
+## 11. Inhaltliche Schwerpunkte des Hauptteils
+
+Der Hauptteil muss insbesondere nachvollziehbar abdecken:
+
+- Ausgangslage / Ist-Analyse
+- Aufgabenstellung
+- Zielsetzung
+- Projektumfeld
+- Schnittstellen
+- Projektphasen
+- Zeitaufwaende
+- Methodik und Vorgehensweise
+- aufgetretene Probleme und Loesungen
+- Alternativen
+- Begruendung von Entscheidungen
+- Qualitaetssicherung
+- erzielte Ergebnisse
+- Abweichungen vom Projektantrag bzw. Soll
+- wirtschaftliche Betrachtung
+
+Besonders wichtig:
+
+- Die **eigene Leistung** muss deutlich sichtbar sein.
+- Vorhandene Bestandteile, Frameworks oder Fremdanteile muessen klar abgegrenzt werden.
+- Bei AE-Projekten ist die eigene Entwicklungsleistung z. B. ueber Screenshots, Ablaufplaene, Diagramme oder Codeauszuege nachzuweisen.
+
+## 12. Uebliche und sinnvolle Anlagen
+
+Die Handreichung nennt als typische praxisbezogene Unterlagen unter anderem:
+
+- Lastenheft
+- Pflichtenheft / Fachkonzept
+- Projektplanung und Meilensteinplanung
+- Vorgehensmodell
+- Ressourcenplanung
+- Kostenplanung
+- Auswahlkriterien
+- Qualitaetssicherung
+- Testplanung und Testdurchfuehrung
+- Abnahme- oder Uebergabeprotokoll
+- Soll-Ist-Vergleiche
+- Lessons Learned
+- Codebeispiele mit Kommentaren
+- Entwicklerdokumentation
+- Anwenderdokumentation
+- Schulungsdokumentation
+
+Wichtig:
+
+- Die Auswahl der Anlagen sollte begruendet sein.
+- Allgemeine Schaubilder ohne direkten Projektbezug helfen nicht.
+- Beschrieben werden soll **die konkrete Anwendung im Projekt**, nicht die allgemeine Lehrbuchdefinition.
+- Codeausdrucke muessen als **Text** eingefuegt werden, nicht als Bild oder Screenshot kompletter Seiten.
+- Inhalte muessen lesbar sein. Unleserliche Seiten werden faktisch nicht bewertet.
+
+## 13. Moegliche Auflagen aus der Genehmigung
+
+Die Handreichung weist ausdruecklich darauf hin, dass der Pruefungsausschuss zusaetzliche Anlagen verlangen kann, zum Beispiel:
+
+- kompletter eigener Quellcode als ZIP per Mail
+- Pflichtenheft
+- Testplanung und Testdurchfuehrung
+- Code als eingefuegter Text mit Erlaeuterungen
+
+Teilweise koennen dabei auch **Mindestumfaenge** gefordert werden, z. B.:
+
+- mindestens **5 Seiten Fachinhalt** je gefordertem Dokument
+
+Deckblatt und Inhaltsverzeichnis zaehlen dabei nicht als Fachinhalt.
+
+## 14. Bewertung der Projektdokumentation
+
+Die Handreichung nennt fuer die Projektdokumentation folgende Bewertungsfelder:
+
+### 14.1 Gesamtgestaltung
+
+- formale Gestaltung
+- sprachliche Gestaltung
+- angemessene Fachbegriffe
+
+Gewichtung:
+
+- **5 %**
+
+### 14.2 Inhaltsuebersicht und Vollstaendigkeit
+
+- Inhaltsuebersicht mit Seitenangaben
+- Kennzeichnung der Anlagen
+- branchenspezifische und firmeninterne Begriffe erklaeren
+- fuer nicht spezialisierte Zielgruppe verstaendlich bleiben
+
+Gewichtung:
+
+- **5 %**
+
+### 14.3 Beschreibung und Konkretisierung des Auftrags
+
+- Ausgangslage
+- Aufgabenstellung
+- Projektumfeld
+- Schnittstellen
+- notwendige Aenderungen gegenueber dem Antrag
+
+zusammen mit:
+
+- Verstaendlichkeit
+- Nachvollziehbarkeit
+- organisatorische Einbettung
+
+Gewichtung:
+
+- **20 %**
+
+### 14.4 Projektphasen und Ergebnisse
+
+- Zeitaufwaende
+- Vorgehensweise / Methodik
+- Probleme und Loesungen
+- Alternativen
+- Begruendung der Entscheidungen
+- Darstellung der Ergebnisse
+- Qualitaetssicherung
+- Abweichungen und Begruendung
+- Erlaeuterung der beigefuegten Unterlagen
+
+Gewichtung:
+
+- **60 %**
+
+### 14.5 Praxisbezogene Dokumente und Unterlagen
+
+- passende und vollstaendige Anlagen
+- ggf. alle in der Genehmigung geforderten Anlagen vorhanden
+
+Gewichtung:
+
+- **10 %**
+
+## 15. Wirtschaftlichkeit
+
+Die wirtschaftliche Betrachtung ist laut Handreichung ein Pflichtbestandteil.
+
+Im Projektbericht sollte deshalb nachvollziehbar dargestellt werden:
+
+- betrieblicher Nutzen
+- eingesparte manuelle Arbeit
+- schnellere Prozesse
+- weniger Fehler und Nacharbeit
+- Nutzen im Verhaeltnis zum Aufwand
+
+Fuer dieses Projekt bedeutet das insbesondere:
+
+- weniger manuelle Pflege zwischen NAV und Actindo
+- weniger Uebertragungs- und Mappingfehler
+- schnellere Reaktion bei Synchronisationsproblemen
+- sauberere Betriebsablaeufe bei Produkt-, Preis- und Bestandsdaten
+
+## 16. KI-Nutzung
+
+Die Handreichung erlaubt KI-Unterstuetzung, stellt aber klare Bedingungen:
+
+- KI-generierte Texte muessen in der Dokumentation **kenntlich gemacht** werden
+- im Anhang muessen enthalten sein:
+  - **URL** der verwendeten KI
+  - die **gestellte Frage**
+  - ein **Screenshot der KI-Antwort**
+
+Zusatz:
+
+- Textwiedergaben und Abbildungen aus anderen Quellen muessen als solche gekennzeichnet werden
+- alle Fundstellen gehoeren ins Quellenverzeichnis
+
+## 17. Anforderungen an Praesentation und Fachgespraech
+
+- Gesamtdauer: **maximal 30 Minuten**
+- Praesentation: **15 Minuten**
+- danach Fachgespraech
+- Ruestzeit vor Ort: in der Regel **maximal 5 Minuten**
+- ein **Handout der Praesentation** wird erwartet
+- eine Demo des Ergebnisses sollte innerhalb der 15 Minuten eingeplant werden
+- bei Ueberschreitung kann der Ausschuss die Praesentation abbrechen
+
+Wichtig:
+
+- keine reine Firmenvorstellung
+- keine reine Verlaufsbeschreibung
+- Fokus auf Projektumfeld, Entscheidungen, Vorgehen und Ergebnis
+- Fachbegriffe muessen sicher verwendet und erklaert werden koennen
+
+## 18. Bedeutung fuer dieses konkrete Projekt
+
+Fuer `S04ActindoMiddleware` bedeutet die Handreichung insbesondere:
+
+- Die Dokumentation darf nicht wie eine reine Featureliste oder Produktbeschreibung aufgebaut sein.
+- Die **Eigenleistung** in Backend, Frontend, NAV-Anbindung, Datenmodell, Schnittstellenlogik und Deployment muss klar herausgestellt werden.
+- Der Einsatz vorhandener Komponenten wie Actindo API, Docker, Frameworks und bestehender NAV-Strukturen muss sauber von der eigenen Arbeit abgegrenzt werden.
+- Projektmanagement, Testplanung, Testdurchfuehrung, Abnahme und Lessons Learned muessen sichtbar Bestandteil der Doku sein.
+- Die wirtschaftliche Begruendung der Middleware ist fuer die Bewertung wichtig und darf nicht nur aus einem kurzen Schlussabsatz bestehen.
+- Anlagen wie Pflichtenheft, Testdokumentation, Codeauszuege und Abnahmeunterlagen sollten frueh vorbereitet werden, weil sie in dieser Handreichung deutlich staerker erwartet werden als in vielen allgemeinen IHK-Kurzinfos.
+
+## 19. Praktische Checkliste fuer die spaetere Endfassung
+
+- Ist der Projektzeitraum IHK-konform und mit dem Antrag konsistent?
+- Ist klar erkennbar, dass es ein reales betriebliches Projekt ist?
+- Ist die eigene Leistung klar abgegrenzt?
+- Hat der Hauptteil ca. **19 bis 21 Seiten**?
+- Ist die Gesamtdatei mit Anlagen plausibel im Bereich von ca. **50 Seiten**?
+- Ist die PDF-Datei **unter 4 MB**?
+- Ist die Reihenfolge der Bestandteile exakt eingehalten?
+- Sind Erklaerung des Betriebes und Genehmigungsmail beigefuegt?
+- Sind alle Auflagen aus der Genehmigung umgesetzt?
+- Ist die wirtschaftliche Betrachtung enthalten?
+- Sind Projektmanagement, Tests, Qualitaetssicherung und Abnahme nachvollziehbar dokumentiert?
+- Wird der Anhang im Haupttext sauber referenziert?
+- Sind Quellen und KI-Nutzung korrekt gekennzeichnet?
+- Sind keine schutzwuerdigen Betriebs- oder Kundendaten enthalten?
+
+## 20. Kurzfazit
+
+Die fuer dieses Projekt relevante Handreichung ist deutlich konkreter als viele allgemeine IHK-Zusammenfassungen. Fuer die Fachrichtung Anwendungsentwicklung erwartet der Pruefungsausschuss IQ1 in Gelsenkirchen keine knappe 15-Seiten-Kurzfassung, sondern eine sauber strukturierte, prozessorientierte Projektdokumentation mit etwa **19 bis 21 Seiten Hauptteil**, einem belastbaren Anhang und klar erkennbarer Eigenleistung.
+
+Die bisherige `Requirements.md` war in mehreren Kernpunkten zu ungenau oder falsch, vor allem bei:
+
+- Seitenumfang
+- Dateigroesse
+- zulaessiger Unterschreitung der Stunden
+- Start des Durchfuehrungszeitraums
+- formaler Struktur der Abgabe
+- Stellenwert von Anlagen, Auflagen und KI-Nutzung
