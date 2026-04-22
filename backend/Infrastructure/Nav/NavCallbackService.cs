@@ -40,7 +40,8 @@ public sealed class NavCallbackService
         string? bufferId,
         object result,
         bool created,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string requestType = "actindo.product.response")
     {
         try
         {
@@ -54,7 +55,7 @@ public sealed class NavCallbackService
 
             // Serialize result to JsonElement, then merge with sku + bufferId + created
             var resultJson = JsonSerializer.SerializeToElement(result, SerializerOptions);
-            var payload = BuildPayload(resultJson, sku, bufferId, created);
+            var payload = BuildPayload(resultJson, sku, bufferId, created, requestType);
 
             var tokenPreview = settings.NavApiToken!.Length > 8
                 ? settings.NavApiToken[..8] + "..."
@@ -119,7 +120,7 @@ public sealed class NavCallbackService
         return false;
     }
 
-    private static object BuildPayload(JsonElement result, string sku, string? bufferId, bool created)
+    private static object BuildPayload(JsonElement result, string sku, string? bufferId, bool created, string requestType)
     {
         // Wandelt das result-Objekt in ein Dictionary um und fügt sku + bufferId + created hinzu
         var dict = new System.Collections.Generic.Dictionary<string, object?>();
@@ -130,7 +131,7 @@ public sealed class NavCallbackService
                 dict[prop.Name] = prop.Value;
         }
 
-        dict["requestType"] = "actindo.product.response";
+        dict["requestType"] = requestType;
         dict["sku"] = sku;
         dict["bufferId"] = bufferId;
         dict["created"] = created;

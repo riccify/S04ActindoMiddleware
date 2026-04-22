@@ -629,96 +629,43 @@ public sealed class ActindoProductsController : ControllerBase
 
     [HttpPost("price")]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> UpdatePrices(
-        [FromBody] JsonElement body,
+        [FromBody] UpdatePricesRequest request,
         CancellationToken _)
     {
-        if (body.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+        var payload = request.ToPayloadElement();
+        if (payload.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null ||
+            (payload.ValueKind == JsonValueKind.Object && !payload.EnumerateObject().Any()))
             return BadRequest("Payload ist erforderlich.");
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
         var cancellationToken = cts.Token;
 
+        var rawRequest = JsonSerializer.Serialize(request);
+        var priceSkuSummary = ExtractPriceJobSkuSummary(payload) ?? "Preis";
+
+        if (!request.Await)
+        {
+            var navError = await ValidateNavSettingsForAsync(cancellationToken);
+            if (navError != null) return navError;
+
+            EnqueuePrice(request, priceSkuSummary, rawRequest);
+            return Accepted(new { message = "Preissync wird ausgeführt", bufferId = request.BufferId });
+        }
+
         var priceSyncJobId = Guid.NewGuid();
         var success = false;
         string? priceSyncJobError = null;
-
-        var priceSkuSummary = ExtractPriceJobSkuSummary(body) ?? "Preis";
-        _jobQueue.RegisterSyncJob(priceSyncJobId, priceSkuSummary, "price", JsonSerializer.Serialize(body));
+        _jobQueue.RegisterSyncJob(priceSyncJobId, priceSkuSummary, "price", rawRequest);
 
         try
         {
-            var endpoints = await _endpointProvider.GetAsync(cancellationToken);
-            var results = new List<JsonElement>();
-
-            var priceUpdates = new List<(int? actindoId, string? sku, decimal? price, decimal? priceEmployee, decimal? priceMember)>();
-
-            if (body.TryGetProperty("variant_prices", out var variantPrices) &&
-                variantPrices.ValueKind == JsonValueKind.Array &&
-                variantPrices.GetArrayLength() > 0)
-            {
-                foreach (var variant in variantPrices.EnumerateArray())
-                {
-                    var forwarded = new { product = variant, thaw = true };
-                    var resp = await _actindoClient.PostAsync(
-                        endpoints.SaveProduct,
-                        forwarded,
-                        cancellationToken);
-                    results.Add(resp);
-
-                    // Extrahiere Preisdaten für DB-Update (aus Request und Response)
-                    var priceData = ExtractPriceData(variant);
-                    var skuFromResponse = ExtractSkuFromResponse(resp);
-                    if (!string.IsNullOrWhiteSpace(skuFromResponse))
-                        priceData = (priceData.actindoId, skuFromResponse, priceData.price, priceData.priceEmployee, priceData.priceMember);
-                    if (priceData.actindoId.HasValue || !string.IsNullOrWhiteSpace(priceData.sku))
-                        priceUpdates.Add(priceData);
-                }
-            }
-            else
-            {
-                var forwarded = new { product = body, thaw = true };
-                var resp = await _actindoClient.PostAsync(
-                    endpoints.SaveProduct,
-                    forwarded,
-                    cancellationToken);
-                results.Add(resp);
-
-                // Extrahiere Preisdaten für DB-Update (aus Request und Response)
-                var priceData = ExtractPriceData(body);
-                var skuFromResponse = ExtractSkuFromResponse(resp);
-                if (!string.IsNullOrWhiteSpace(skuFromResponse))
-                    priceData = (priceData.actindoId, skuFromResponse, priceData.price, priceData.priceEmployee, priceData.priceMember);
-                if (priceData.actindoId.HasValue || !string.IsNullOrWhiteSpace(priceData.sku))
-                    priceUpdates.Add(priceData);
-            }
-
-            // Speichere Preisdaten in DB (versuche erst per ActindoId, dann per SKU)
-            foreach (var update in priceUpdates)
-            {
-                if (update.actindoId.HasValue)
-                {
-                    await _dashboardMetrics.UpdateProductPriceByActindoIdAsync(
-                        update.actindoId.Value,
-                        update.price,
-                        update.priceEmployee,
-                        update.priceMember,
-                        cancellationToken);
-                }
-                if (!string.IsNullOrWhiteSpace(update.sku))
-                {
-                    await _dashboardMetrics.UpdateProductPriceAsync(
-                        update.sku,
-                        update.price,
-                        update.priceEmployee,
-                        update.priceMember,
-                        cancellationToken);
-                }
-            }
-
+            var result = await RunPriceSyncCoreAsync(payload, priceSkuSummary, cancellationToken);
+            await PersistProductPriceUpdatesAsync(result.PriceUpdates, cancellationToken);
             success = true;
-            return Ok(new { results });
+            return Ok(new { results = result.Results });
         }
         catch (Exception ex)
         {
@@ -1058,6 +1005,18 @@ public sealed class ActindoProductsController : ControllerBase
                 EnqueueFull(rawProd, sku, req.BufferId, req.Inventories, job.NavRequestPayload);
                 break;
             }
+            case "price":
+            {
+                var req = JsonSerializer.Deserialize<UpdatePricesRequest>(job.NavRequestPayload, opts);
+                if (req == null)
+                    return BadRequest("Ungültiger gespeicherter Request");
+                var payload = req.ToPayloadElement();
+                if (payload.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+                    return BadRequest("Ungültiger gespeicherter Request");
+                var priceSkuSummary = ExtractPriceJobSkuSummary(payload) ?? "Preis";
+                EnqueuePrice(req, priceSkuSummary, job.NavRequestPayload);
+                break;
+            }
             default:
                 return BadRequest($"Operation '{job.Operation}' kann nicht wiederholt werden");
         }
@@ -1200,6 +1159,114 @@ public sealed class ActindoProductsController : ControllerBase
         }, navPayload);
     }
 
+    private void EnqueuePrice(UpdatePricesRequest request, string priceSkuSummary, string? navPayload = null)
+    {
+        var capturedRequest = request;
+        _jobQueue.Enqueue(priceSkuSummary, "price", request.BufferId, async ct =>
+        {
+            try
+            {
+                var payload = capturedRequest.ToPayloadElement();
+                var result = await RunPriceSyncCoreAsync(payload, priceSkuSummary, ct);
+                await PersistProductPriceUpdatesAsync(result.PriceUpdates, ct);
+
+                var navAck = await _navCallback.SendCallbackAsync(
+                    priceSkuSummary,
+                    capturedRequest.BufferId,
+                    result,
+                    created: false,
+                    cancellationToken: ct,
+                    requestType: "actindo.price.response");
+
+                if (!navAck)
+                    throw new InvalidOperationException("NAV callback for price sync was not acknowledged.");
+            }
+            catch (Exception ex)
+            {
+                var navAck = await _navCallback.SendCallbackAsync(
+                    priceSkuSummary,
+                    capturedRequest.BufferId,
+                    new { success = false, error = ex.Message },
+                    created: false,
+                    cancellationToken: ct,
+                    requestType: "actindo.price.response");
+
+                if (!navAck)
+                    throw;
+            }
+        }, navPayload);
+    }
+
+    private async Task<PriceSyncResult> RunPriceSyncCoreAsync(
+        JsonElement body,
+        string skuSummary,
+        CancellationToken cancellationToken)
+    {
+        var endpoints = await _endpointProvider.GetAsync(cancellationToken);
+        var result = new PriceSyncResult
+        {
+            SkuSummary = skuSummary
+        };
+
+        if (body.TryGetProperty("variant_prices", out var variantPrices) &&
+            variantPrices.ValueKind == JsonValueKind.Array &&
+            variantPrices.GetArrayLength() > 0)
+        {
+            foreach (var variant in variantPrices.EnumerateArray())
+            {
+                var forwarded = new { product = variant, thaw = true };
+                var response = await _actindoClient.PostAsync(
+                    endpoints.SaveProduct,
+                    forwarded,
+                    cancellationToken);
+                result.Results.Add(response);
+
+                var priceData = ExtractPriceData(variant);
+                var skuFromResponse = ExtractSkuFromResponse(response);
+                if (!string.IsNullOrWhiteSpace(skuFromResponse))
+                    priceData = (priceData.actindoId, skuFromResponse, priceData.price, priceData.priceEmployee, priceData.priceMember);
+                if (priceData.actindoId.HasValue || !string.IsNullOrWhiteSpace(priceData.sku))
+                {
+                    result.PriceUpdates.Add(new ProductPriceUpdateItem
+                    {
+                        ActindoProductId = priceData.actindoId,
+                        Sku = priceData.sku,
+                        Price = priceData.price,
+                        PriceEmployee = priceData.priceEmployee,
+                        PriceMember = priceData.priceMember
+                    });
+                }
+            }
+        }
+        else
+        {
+            var forwarded = new { product = body, thaw = true };
+            var response = await _actindoClient.PostAsync(
+                endpoints.SaveProduct,
+                forwarded,
+                cancellationToken);
+            result.Results.Add(response);
+
+            var priceData = ExtractPriceData(body);
+            var skuFromResponse = ExtractSkuFromResponse(response);
+            if (!string.IsNullOrWhiteSpace(skuFromResponse))
+                priceData = (priceData.actindoId, skuFromResponse, priceData.price, priceData.priceEmployee, priceData.priceMember);
+            if (priceData.actindoId.HasValue || !string.IsNullOrWhiteSpace(priceData.sku))
+            {
+                result.PriceUpdates.Add(new ProductPriceUpdateItem
+                {
+                    ActindoProductId = priceData.actindoId,
+                    Sku = priceData.sku,
+                    Price = priceData.price,
+                    PriceEmployee = priceData.priceEmployee,
+                    PriceMember = priceData.priceMember
+                });
+            }
+        }
+
+        return result;
+    }
+
     /// <summary>
     /// Wandelt eine CreateProductResponse in das einheitliche NAV-Callback-Format um (wie FullProductSyncResult).
     /// </summary>
@@ -1231,6 +1298,14 @@ public sealed class FullProductSyncResult
     public ConcurrentBag<InventoryUpdateResultItem> InventoryUpdates { get; set; } = new();
     public bool Success => Variants.All(v => v.Success) &&
                            InventoryUpdates.All(i => i.Success);
+}
+
+public sealed class PriceSyncResult
+{
+    public string SkuSummary { get; set; } = string.Empty;
+    public List<JsonElement> Results { get; set; } = new();
+    public List<ProductPriceUpdateItem> PriceUpdates { get; set; } = new();
+    public bool Success => true;
 }
 
 public sealed class ProductPriceUpdateItem
