@@ -52,7 +52,8 @@ public sealed class TransactionService
                 }
             },
             serializeOptionals = new[] { "legacyProperties", "positions._schalke_position_flock_name", "positions._schalke_position_flock_number" },
-            start = 0
+            start = 0,
+            limit = 500
         };
 
         var endpoints = await _endpoints.GetAsync(cancellationToken);
