@@ -6,7 +6,7 @@ Diese Datei dient als interne Arbeitsgrundlage für die Erstellung und Überarbe
 
 ## Ablage und Benennung
 
-- Lege neue Doku-Kapitel immer im Ordner `school/Docs` ab.
+- Lege neue Doku-Kapitel immer im Ordner `Docs` ab.
 - Benenne Kapiteldateien nach dem Muster `1_Kapitelname.md`, `2_Kapitelname.md`, `3_Kapitelname.md` usw.
 - Verwende die Nummerierung konsequent, damit die Reihenfolge der Dokumentation direkt an den Dateinamen erkennbar ist.
 - Neue Kapitel für die Projektdokumentation sollen nicht lose an anderen Stellen im Repository angelegt werden.
@@ -36,7 +36,7 @@ Diese Datei dient als interne Arbeitsgrundlage für die Erstellung und Überarbe
 
 - Beziehe dich bei Doku-Texten auf den tatsächlichen Projektstand im Repository.
 - Schaue dafür immer in den vorhandenen Code, die Projektstruktur und bestehende Dokumente.
-- Nutze insbesondere `school/Antrag.md` als inhaltliche Referenz für Ausgangssituation, Zielsetzung, Projektumfeld und Abgrenzung.
+- Nutze insbesondere `Docs/Antrag.md` als inhaltliche Referenz für Ausgangssituation, Zielsetzung, Projektumfeld und Abgrenzung.
 - Prüfe Aussagen nach Möglichkeit gegen den realen Code, damit keine Funktionen beschrieben werden, die im Projekt so nicht existieren.
 - Wenn Architektur, Ablauf oder Verhalten beschrieben werden, sollen diese aus dem tatsächlichen Projekt ableitbar sein.
 
@@ -54,7 +54,7 @@ Diese Datei dient als interne Arbeitsgrundlage für die Erstellung und Überarbe
 
 ## IHK-Bezug
 
-- Berücksichtige bei der Dokuarbeit immer die Vorgaben aus `school/Docs/Requirements.md`.
-- Berücksichtige zusätzlich immer die individuellen Auflagen aus `school/Docs/0_IHK_Auflagen.md`.
-- Wenn Unsicherheit besteht, ist zusätzlich die PDF `school/Docs/Handreichung_IHK.pdf` heranzuziehen.
+- Berücksichtige bei der Dokuarbeit immer die Vorgaben aus `Docs/Requirements.md`.
+- Berücksichtige zusätzlich immer die individuellen Auflagen aus `Docs/0_IHK_Auflagen.md`.
+- Wenn Unsicherheit besteht, ist zusätzlich die PDF `Docs/Handreichung_IHK.pdf` heranzuziehen.
 - Struktur, Umfang und Ton der Kapitel sollen zur IHK-Projektdokumentation für Fachinformatiker Anwendungsentwicklung passen.
