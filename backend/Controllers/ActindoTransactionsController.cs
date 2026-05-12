@@ -35,7 +35,7 @@ public sealed class ActindoTransactionsController : ControllerBase
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
         var cancellationToken = cts.Token;
         var jobId = Guid.NewGuid();
-        var jobReference = $"transactions:{request.Date}";
+        var jobReference = $"transactions:{request.Action}:{request.Date}";
         var requestPayload = System.Text.Json.JsonSerializer.Serialize(request);
         var success = false;
         string? error = null;
@@ -47,6 +47,11 @@ public sealed class ActindoTransactionsController : ControllerBase
             var result = await _transactionService.GetTransactionsAsync(request, cancellationToken);
             success = true;
             return StatusCode(StatusCodes.Status201Created, result);
+        }
+        catch (ArgumentException ex)
+        {
+            error = ex.Message;
+            return BadRequest(ex.Message);
         }
         catch (Exception ex)
         {
