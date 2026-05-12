@@ -1,0 +1,2372 @@
+OBJECT Codeunit 80092 S04 Actindo Service
+{
+  OBJECT-PROPERTIES
+  {
+    Date=30.04.26;
+    Time=13:11:17;
+    Modified=Yes;
+    Version List=S04.00,ACTINDO;
+  }
+  PROPERTIES
+  {
+    OnRun=BEGIN
+            // DEBUG
+            ProcessSynchBufferEntries();
+            // DEBUG
+          END;
+
+  }
+  CODE
+  {
+    VAR
+      ActindoSetup@5091700 : Record 80092;
+
+    LOCAL PROCEDURE "### MIDDLEWARE TRIGGER ###"@5091718();
+    BEGIN
+    END;
+
+    PROCEDURE SendToMiddleware@5091700(payload@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";endpoint@5091705 : Text) responseText : Text;
+    VAR
+      addressObj@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      customerObj@5091702 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      prop@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      ActindoCore@5091707 : Codeunit 50090;
+      WebServiceSetup@5091706 : Record 60073;
+      WebserviceEndpoint@5091700 : Record 80090;
+    BEGIN
+      // check WS setup
+      WebServiceSetup.GET('ACTINDO');
+      WebserviceEndpoint.GET(WebServiceSetup.Code, endpoint);
+
+      // send request
+      ActindoCore.SendRequest('POST', WebserviceEndpoint, payload, {ref}responseText, '');
+      EXIT(responseText);
+    END;
+
+    LOCAL PROCEDURE "### BUFFER FUNCTIONS ###"@5091715();
+    BEGIN
+    END;
+
+    PROCEDURE HandleSingleActindoBufferEntry@5091707(VAR ActindoSynchBuffer@5091701 : Record 80091);
+    VAR
+      request@5091711 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      response@5091710 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      JsonConvert@5091709 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.JsonConvert";
+      json@5091708 : Text;
+      transactionId@5091707 : Text;
+      responseText@5091706 : Text;
+      StartTime@5091705 : Time;
+      EndTime@5091704 : Time;
+      iStream@5091703 : InStream;
+      oStream@5091702 : OutStream;
+      ErrMsg@5091700 : Text;
+      Success@5091712 : Boolean;
+    BEGIN
+      StartTime := TIME();
+
+      // get created Request from Buffer
+      ActindoSynchBuffer.CALCFIELDS("Request Document");
+      ActindoSynchBuffer."Request Document".CREATEINSTREAM(iStream, TEXTENCODING::UTF8);
+      iStream.READTEXT(json);
+      request := request.Parse(json);
+
+      Success := FALSE;
+
+      ActindoSynchBuffer.Status := ActindoSynchBuffer.Status::"In Progress";
+      ActindoSynchBuffer.MODIFY(TRUE);
+
+      COMMIT();
+      SELECTLATESTVERSION();
+
+      CASE ActindoSynchBuffer.Endpoint OF
+        'SAVE_CUSTOMER':
+          Success := TrySaveActindoCustomer(ActindoSynchBuffer."Reference No.", {ref}responseText);
+        'CREATE_CUSTOMER':
+          Success := TryCreateActindoCustomer(ActindoSynchBuffer."Reference No.", {ref}responseText);
+        'SAVE_PRODUCT':
+          Success := TrySaveActindoProduct(ActindoSynchBuffer."Reference No.", {ref}responseText, ActindoSynchBuffer."No.");
+        'CREATE_PRODUCT':
+          Success := TryCreateActindoProduct(ActindoSynchBuffer."Reference No.", {ref}responseText, ActindoSynchBuffer."No.");
+        'GET_TRANSACTIONS':
+          Success := TryGetTransactions(ActindoSynchBuffer, {ref}responseText);
+        'SAVE_INVENTORY':
+          Success := TrySaveActindoInventory(ActindoSynchBuffer."Reference No.", {ref}responseText);
+        'SAVE_PRICE':
+          Success := TrySaveActindoPrice(ActindoSynchBuffer."Reference No.", {ref}responseText, ActindoSynchBuffer."No.");
+        'FULL_PRODUCT':
+          Success := TryCreateFullActindoProduct(ActindoSynchBuffer."Reference No.", {ref}responseText, ActindoSynchBuffer."No.");
+
+        ELSE
+          ERROR('unknown endpoint: %1', ActindoSynchBuffer.Endpoint);
+      END;
+      EndTime := TIME();
+      IF (ActindoSynchBuffer.Endpoint <> 'CREATE_PRODUCT') AND
+         (ActindoSynchBuffer.Endpoint <> 'SAVE_PRODUCT') AND
+         (ActindoSynchBuffer.Endpoint <> 'FULL_PRODUCT') AND
+         (ActindoSynchBuffer.Endpoint <> 'SAVE_PRICE')
+      THEN BEGIN
+        IF Success THEN BEGIN
+          ActindoSynchBuffer.VALIDATE(Status, ActindoSynchBuffer.Status::Processed);
+        END ELSE BEGIN
+          ASSERTERROR ERROR(GETLASTERRORTEXT());
+          ActindoSynchBuffer."Error Message" := DELSTR(GETLASTERRORTEXT(), 250);
+          ActindoSynchBuffer.Status := ActindoSynchBuffer.Status::Error;
+        END;
+      END;
+      ActindoSynchBuffer."Processing Timestamp" := CREATEDATETIME(TODAY(), TIME());
+      ActindoSynchBuffer."Processing Duration"  := EndTime - StartTime;
+      ActindoSynchBuffer."Response Document".CREATEOUTSTREAM(oStream, TEXTENCODING::UTF8);
+      //MESSAGE(responseText);
+      response := response.Parse(responseText);
+      oStream.WRITETEXT(responseText);
+      ActindoSynchBuffer.MODIFY(TRUE);
+    END;
+
+    PROCEDURE TransferToSynchBuffer@5091708(pEntityType@5091700 : Text;pEntityId@5091704 : Text);
+    VAR
+      customerObj@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      Customer@5091702 : Record 18;
+      S04CustomerExtended@5091703 : Record 60018;
+      itemObj@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      Item@5091706 : Record 27;
+      transactionPayload@5091707 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      err@5091708 : TextConst 'DEU="No entity type or entity Id was given. "';
+      err_not_active@5091709 : TextConst 'DEU=Synch. for entity type %1 not active.';
+      FullPayload@5091716 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      pricePayload@5091714 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      inventoryPayload@5091710 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      ReturnTextInventory@5091711 : Text;
+      err_no_actindo_id@5091712 : TextConst 'DEU=Bestand Synch. Fehler: Der Artikel %1 existiert bei Actindo nicht.';
+      err_no_stock@5091713 : TextConst 'DEU=Bestand Synch. Fehler: Der Artikel %1 hat keinen Bestand.';
+      ReturnTextPrice@5091715 : Text;
+      ReturnFullSave@5091717 : Boolean;
+      Endpoint@5091718 : Text;
+    BEGIN
+      IF (pEntityId = '') THEN
+        IF NOT (pEntityType = 'transactions') THEN
+          ERROR(err);
+
+      CheckActindoSetup();
+
+      CASE pEntityType OF
+        'customer':
+          BEGIN
+            IF NOT ActindoSetup."Customer Synch. Active" THEN
+              ERROR(err_not_active, pEntityType);
+            IF Customer.GET(pEntityId) THEN BEGIN
+              IF NOT S04CustomerExtended.GET(Customer."No.") THEN BEGIN
+                S04CustomerExtended.INIT();
+                S04CustomerExtended."No." := Customer."No.";
+                S04CustomerExtended.INSERT(TRUE);
+              END;
+              IF S04CustomerExtended."Actindo Customer ID" <> '' THEN BEGIN
+                CLEAR(customerObj);
+                CreateCustomerJsonObject(customerObj, pEntityId, FALSE);
+                CreateActindoSynchBufferEntry(customerObj, pEntityId, 'SAVE_CUSTOMER')
+              END ELSE BEGIN
+                CLEAR(customerObj);
+                CreateCustomerJsonObject(customerObj, pEntityId, TRUE);
+                CreateActindoSynchBufferEntry(customerObj, pEntityId, 'CREATE_CUSTOMER');
+              END;
+            END;
+          END;
+        'product':
+          BEGIN
+            IF NOT ActindoSetup."Product Synch. Active" THEN
+              ERROR(err_not_active, pEntityType);
+            itemObj := itemObj.JObject();
+            IF Item.GET(pEntityId) AND (Item."Actindo POS ID" <> '') THEN BEGIN
+              CreateProductJsonObject({ref}itemObj, pEntityId, TRUE, FALSE);
+              CreateActindoSynchBufferEntry(itemObj, pEntityId, 'SAVE_PRODUCT')
+            END ELSE BEGIN
+              CreateProductJsonObject({ref}itemObj, pEntityId, FALSE, FALSE);
+              CreateActindoSynchBufferEntry(itemObj, pEntityId, 'CREATE_PRODUCT')
+            END;
+          END;
+        'transactions':
+          BEGIN
+            IF NOT ActindoSetup."POS Transaction Synch. Active" THEN
+              ERROR(err_not_active, pEntityType);
+            CLEAR(transactionPayload);
+            CreateTransactionJsonObject({ref}transactionPayload);
+            CreateActindoSynchBufferEntry(transactionPayload, '', 'GET_TRANSACTIONS');
+          END;
+        'inventory':
+          BEGIN
+            IF NOT ActindoSetup."Product Synch. Active" THEN
+              ERROR(err_not_active, pEntityType);
+
+            inventoryPayload    := inventoryPayload.JObject();
+            ReturnTextInventory := CreateInventoryJsonObject({ref}inventoryPayload, pEntityId);
+
+            CASE ReturnTextInventory OF
+              'no_actindo_id':
+                BEGIN
+                  ERROR(err_no_actindo_id, pEntityId);
+                END;
+              'no_stock':
+                BEGIN
+                  ERROR(err_no_stock, pEntityId);
+                END;
+            ELSE
+              CreateActindoSynchBufferEntry(inventoryPayload, pEntityId, 'SAVE_INVENTORY');
+            END;
+          END;
+        'price':
+          BEGIN
+            IF NOT ActindoSetup."Product Synch. Active" THEN
+              ERROR(err_not_active, pEntityType);
+
+            pricePayload    := pricePayload.JObject();
+            ReturnTextPrice := CreatePriceJsonObject(pricePayload, pEntityId);
+
+            CASE ReturnTextPrice OF
+              'no_actindo_id':
+                BEGIN
+                  ERROR(err_no_actindo_id, pEntityId);
+                END;
+
+            ELSE
+              CreateActindoSynchBufferEntry(pricePayload, pEntityId, 'SAVE_PRICE');
+            END;
+          END;
+        'full':
+          BEGIN
+            IF NOT ActindoSetup."Product Synch. Active" THEN
+              ERROR(err_not_active, pEntityType);
+
+            FullPayload    := FullPayload.JObject();
+            ReturnFullSave := CreateFullProductJsonObject({ref}FullPayload, pEntityId);
+
+            CreateActindoSynchBufferEntry(FullPayload, pEntityId, 'FULL_PRODUCT');
+          END;
+      ELSE
+        ERROR('no mapping found for entity %1 with Id %2!', pEntityType, pEntityId);
+      END;
+    END;
+
+    LOCAL PROCEDURE CreateActindoSynchBufferEntry@5091704(request@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";referenceNo@5091705 : Code[20];endpoint@5091706 : Text);
+    VAR
+      json@5091702 : Text;
+      oStream@5091701 : OutStream;
+      JsonConvert@5091700 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.JsonConvert";
+      ActindoSynchBuffer@5091704 : Record 80091;
+    BEGIN
+      // check for already existing open entry
+      ActindoSynchBuffer.RESET();
+      ActindoSynchBuffer.SETRANGE(Status, ActindoSynchBuffer.Status::Open);
+      ActindoSynchBuffer.SETRANGE(Direction, ActindoSynchBuffer.Direction::Outbound);
+      ActindoSynchBuffer.SETRANGE("Reference No.", referenceNo);
+      ActindoSynchBuffer.SETRANGE(Endpoint, endpoint);
+
+      IF NOT ActindoSynchBuffer.FINDFIRST() THEN BEGIN
+        // create new synch entry
+        CLEAR(ActindoSynchBuffer);
+        ActindoSynchBuffer.INIT();
+
+        ActindoSynchBuffer.Status              := ActindoSynchBuffer.Status::Open;
+        ActindoSynchBuffer."Request Timestamp" := CURRENTDATETIME();
+        ActindoSynchBuffer."Reference No."     := referenceNo;
+        ActindoSynchBuffer.Direction           := ActindoSynchBuffer.Direction::Outbound;
+        ActindoSynchBuffer.Endpoint            := endpoint;
+        ActindoSynchBuffer."User ID"           := USERID();
+
+        ActindoSynchBuffer.INSERT(TRUE);
+
+        json := JsonConvert.SerializeObject(request);
+        ActindoSynchBuffer."Request Document".CREATEOUTSTREAM(oStream, TEXTENCODING::UTF8);
+        oStream.WRITETEXT(json);
+
+        ActindoSynchBuffer.MODIFY(TRUE);
+      END ELSE
+        EXIT;
+    END;
+
+    PROCEDURE ProcessSynchBufferEntries@5091712();
+    VAR
+      S04ActindoSynchBuffer@5091700 : Record 80091;
+    BEGIN
+      S04ActindoSynchBuffer.RESET();
+      S04ActindoSynchBuffer.SETRANGE(Status, S04ActindoSynchBuffer.Status::Open);
+      IF S04ActindoSynchBuffer.FINDSET() THEN BEGIN
+        REPEAT
+          HandleSingleActindoBufferEntry({ref}S04ActindoSynchBuffer);
+        UNTIL S04ActindoSynchBuffer.NEXT() = 0;
+      END;
+    END;
+
+    LOCAL PROCEDURE "### PAYLOAD ASSIGNMENTS ###"@5091727();
+    BEGIN
+    END;
+
+    LOCAL PROCEDURE AssignInventory@5091702(StocksObj@5091702 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";ItemNo@5091701 : Code[20];VarCode@5091710 : Code[20]);
+    VAR
+      JToken@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JToken";
+      prop@5091708 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      currenciesArray@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      inventoryArray@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      StocksArray@5091700 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      S04ItemServices@5091709 : Codeunit 60052;
+      Location@5091706 : Record 14;
+      itemStockValue@5091707 : Decimal;
+      StockObj@5091711 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+    BEGIN
+      StocksArray := StocksArray.JArray();
+
+      Location.RESET();
+      Location.SETFILTER("Actindo POS Location Name", '<>%1', '');
+
+      IF Location.FINDSET() THEN BEGIN
+        REPEAT
+          IF Location."Actindo POS Stock Synch" THEN BEGIN
+            IF VarCode <> '' THEN
+              itemStockValue := S04ItemServices.GetItemStock(ItemNo, VarCode, Location.Code)
+            ELSE
+              itemStockValue := S04ItemServices.GetItemStock(ItemNo, '', Location.Code);
+
+            StockObj := StockObj.JObject();
+            StockObj.Add(prop.JProperty('warehouse_id', Location."Actindo POS Location Name"));
+            StockObj.Add(prop.JProperty('stock', itemStockValue));
+
+            JToken := StockObj;
+            StocksArray.Add(JToken);
+          END;
+        UNTIL Location.NEXT() = 0;
+
+        StocksObj.Add(prop.JProperty('stocks', StocksArray));
+      END;
+    END;
+
+    LOCAL PROCEDURE AssignEAN@5091709(VAR itemObject@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";Item@5091702 : Record 27;VarCode@5091704 : Code[20]);
+    VAR
+      prop@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      ItemCrossReference@5091700 : Record 5717;
+    BEGIN
+      ItemCrossReference.RESET();
+      ItemCrossReference.SETRANGE("Item No.",Item."No.");
+      ItemCrossReference.SETRANGE("Cross-Reference Type", ItemCrossReference."Cross-Reference Type"::"Bar Code");
+      IF VarCode <> '' THEN
+        ItemCrossReference.SETRANGE("Variant Code", VarCode);
+
+      IF NOT ItemCrossReference.FINDFIRST() THEN
+        EXIT;
+
+      IF ItemCrossReference."Cross-Reference No." = '' THEN
+        EXIT;
+
+      itemObject.Add(prop.JProperty('_pim_ean', ItemCrossReference."Cross-Reference No."));
+    END;
+
+    LOCAL PROCEDURE AssignCatalog@5091728(VAR itemObject@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";Item@5091700 : Record 27);
+    VAR
+      catalogValue@5091702 : Text;
+    BEGIN
+      {
+      CASE TRUE OF
+        Item.Catalog = Item.Catalog::"Merchandising Catalog":
+          catalogValue := 'merchandising-catalog';
+        Item.Catalog = Item.Catalog::"Spring Catalog":
+          catalogValue := 'spring-catalog';
+        Item.Catalog = Item.Catalog::"Winter Catalog":
+          catalogValue := 'winter-catalog';
+      END;
+      IF catalogValue <> '' THEN
+        itemObject.Add(prop.JProperty('_pim_catalog', catalogValue));
+      }
+    END;
+
+    LOCAL PROCEDURE AssignPrice@5091729(VAR itemObject@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";Item@5091700 : Record 27;VarCode@5091728 : Text);
+    VAR
+      prop@5091710 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      JToken@5091711 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JToken";
+      currenciesArray@5091709 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      currencyObject@5091708 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      basePriceObject@5091707 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      BulkAndPromotionPricesArray@5091706 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      bulkPromoPriceObj@5091727 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      bulkPromoObj@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      pricesObject@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      msrpObject@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      employeePriceObject@5091716 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      employeeCurrenciesArray@5091718 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      employeeCurrencyObject@5091717 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      memberPriceObject@5091723 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      memberCurrenciesArray@5091722 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      memberCurrencyObject@5091721 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      recPrice@5091702 : Record 7002;
+      LatestRecPrice@5091729 : Record 7002;
+      BulkAndPromotionPrice@5091714 : Record 7002;
+      MemberPrice@5091724 : Record 7002;
+      CustomerPriceGroup@5091715 : Record 6;
+      HasMemberPrice@5091725 : Boolean;
+      HasEmployeePrice@5091726 : Boolean;
+      taxClassId@5091712 : Integer;
+      employeeDiscount@5091719 : Decimal;
+      employeePrice@5091720 : Decimal;
+      PriceServices@5091713 : Codeunit 5242856;
+    BEGIN
+      // find standard price / base price
+      recPrice.RESET();
+      recPrice.SETRANGE("Item No.", Item."No.");
+
+      IF VarCode <> '' THEN
+        recPrice.SETRANGE("Variant Code", VarCode);
+
+      recPrice.SETRANGE("Sales Type", recPrice."Sales Type"::"All Customers");
+      recPrice.SETFILTER("Starting Date and Time", '%1|<=%2', 0DT, CURRENTDATETIME());
+      recPrice.SETFILTER("Ending Date and Time", '%1|>=%2', 0DT, CURRENTDATETIME());
+
+      // LastPrice Logic
+      IF recPrice.FINDSET() THEN BEGIN
+        LatestRecPrice := recPrice;
+        REPEAT
+          IF recPrice."Starting Date and Time" > LatestRecPrice."Starting Date and Time" THEN
+            LatestRecPrice := recPrice;
+        UNTIL recPrice.NEXT = 0;
+
+        CheckActindoSetup();
+
+        // define tax class
+        CASE Item."VAT Prod. Posting Group" OF
+          'FAN19', 'FAN16' : taxClassId := ActindoSetup."Default Taxclass ID"; // default
+          'FAN07', 'FAN05' : taxClassId := ActindoSetup."Reduced Taxclass ID"; // reduced
+          'M00'            : taxClassId := ActindoSetup."Free Taxclass ID";    // free
+        END;
+
+        // create baseprice object
+        BuildPriceObject({ref}pricesObject, {ref}currenciesArray, {ref}currencyObject, LatestRecPrice."Unit Price", LatestRecPrice."Price Includes VAT", taxClassId);
+
+        BulkAndPromotionPrice.RESET();
+        BulkAndPromotionPrice.SETCURRENTKEY("Item No.", "Variant Code", "Sales Type", "Sales Code", "Starting Date and Time");
+        BulkAndPromotionPrice.SETRANGE("Item No.", Item."No.");
+
+        IF VarCode <> '' THEN
+          BulkAndPromotionPrice.SETRANGE("Variant Code", VarCode)
+        ELSE
+          BulkAndPromotionPrice.SETRANGE("Variant Code", '');
+
+        BulkAndPromotionPrice.SETRANGE("Sales Type",BulkAndPromotionPrice."Sales Type"::"All Customers");
+        BulkAndPromotionPrice.SETFILTER("Ending Date and Time", '>=%1', CURRENTDATETIME());
+
+        BulkAndPromotionPricesArray := BulkAndPromotionPricesArray.JArray();
+
+        IF BulkAndPromotionPrice.FINDSET THEN BEGIN
+          REPEAT
+            bulkPromoObj := bulkPromoObj.JObject();
+
+            bulkPromoObj.Add(prop.JProperty('description', STRSUBSTNO('Angebotspreis fÅr Artikel %1',Item."No.")));
+            bulkPromoObj.Add(prop.JProperty('startQuantity',1));
+            bulkPromoObj.Add(prop.JProperty('percentage',0));
+
+            bulkPromoObj.Add(prop.JProperty('validFrom', DateTime2UnixTimestamp(BulkAndPromotionPrice."Starting Date and Time")));
+
+            bulkPromoObj.Add(prop.JProperty('validTo',DateTime2UnixTimestamp(BulkAndPromotionPrice."Ending Date and Time")));
+
+            bulkPromoObj.Add(prop.JProperty('minQuantity', 1));
+
+            bulkPromoPriceObj := bulkPromoPriceObj.JObject();
+            bulkPromoPriceObj.Add(prop.JProperty('isGross', BulkAndPromotionPrice."Price Includes VAT"));
+            bulkPromoPriceObj.Add(prop.JProperty('price', BulkAndPromotionPrice."Unit Price"));
+
+            bulkPromoObj.Add(prop.JProperty('price', bulkPromoPriceObj));
+
+            JToken := bulkPromoObj;
+            BulkAndPromotionPricesArray.Add(JToken);
+          UNTIL BulkAndPromotionPrice.NEXT = 0;
+        END;
+        IF BulkAndPromotionPricesArray.Count() > 0 THEN
+          currencyObject.Add(prop.JProperty('bulkAndPromotionPrices', BulkAndPromotionPricesArray));
+
+        // add base and promotion/bulk prices to payload
+        itemObject.Add(prop.JProperty('_pim_price', pricesObject));
+
+        // define employee price
+        HasEmployeePrice := FALSE;
+
+        CASE Item."Item Disc. Group" OF
+          'RABATT10':
+            BEGIN
+              employeeDiscount := LatestRecPrice."Unit Price" * 10 / 100;
+              employeePrice    := ROUND(LatestRecPrice."Unit Price" - employeeDiscount, 0.01);
+              HasEmployeePrice := TRUE;
+            END;
+          'RABATT20':
+            BEGIN
+              employeeDiscount := LatestRecPrice."Unit Price" * 20 / 100;
+              employeePrice    := ROUND(LatestRecPrice."Unit Price" - employeeDiscount, 0.01);
+              HasEmployeePrice := TRUE;
+            END;
+        END;
+
+        // add employee price to payload
+        IF HasEmployeePrice THEN BEGIN
+          BuildPriceObject({ref}employeePriceObject, {ref}employeeCurrenciesArray, {ref}employeeCurrencyObject, employeePrice, LatestRecPrice."Price Includes VAT", taxClassId);
+          itemObject.Add(prop.JProperty('_pim_price_employee', employeePriceObject));
+        END;
+
+        // define member price
+        HasMemberPrice := FALSE;
+
+        WITH MemberPrice DO BEGIN
+          RESET();
+          SETRANGE("Item No.", Item."No.");
+          SETFILTER("Starting Date and Time", '%1|<=%2', 0DT, CREATEDATETIME(WORKDATE(), TIME()));
+          SETFILTER("Ending Date and Time", '%1|>=%2', 0DT, CREATEDATETIME(WORKDATE(), TIME()));
+          SETRANGE("Sales Type", "Sales Type"::"Customer Price Group"); // !!!
+          SETRANGE("Sales Code", 'MIT'); // !!!
+          IF FINDFIRST() THEN
+            HasMemberPrice := TRUE;
+        END;
+
+        IF HasMemberPrice THEN BEGIN
+          BuildPriceObject({ref}memberPriceObject, {ref}memberCurrenciesArray, {ref}memberCurrencyObject, MemberPrice."Unit Price", MemberPrice."Price Includes VAT", taxClassId);
+          itemObject.Add(prop.JProperty('_pim_price_member', memberPriceObject));
+        END;
+
+      END;
+    END;
+
+    LOCAL PROCEDURE AssignVariants@5091730(VAR itemObject@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";Item@5091700 : Record 27;attributeSetId@5091708 : Integer;WithPrice@5091721 : Boolean;IsSave@5091722 : Boolean);
+    VAR
+      prop@5091707 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      JToken@5091706 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JToken";
+      itemVarObject@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      variantsArray@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      pimVariantsObject@5091709 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      flocksArray@5091711 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      logoArray@5091718 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      pimFlockOptionsObject@5091710 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      pimLogoOptionsObject@5091719 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      recItemVariant@5091702 : Record 5401;
+      WebCustomProduct@5091712 : Record 5243070;
+      WebCustomProductLine@5091713 : Record 5243071;
+      flockVariants@5091716 : Record 5401;
+      logoVariants@5091717 : Record 5401;
+      flockItemNo@5091714 : Code[20];
+      LogoItemNoRight@5091715 : Code[20];
+      LogoItemVariantCodeRight@5091723 : Code[20];
+      LogoItemNoLeft@5091720 : Code[20];
+      LogoItemVariantCodeLeft@5091724 : Code[20];
+      variantStatus@5091705 : Text;
+    BEGIN
+      CheckActindoSetup();
+
+      variantsArray := variantsArray.JArray();
+      Item.CALCFIELDS("Variant Existis");
+
+      IF Item."Variant Existis" THEN BEGIN
+        recItemVariant.RESET();
+        recItemVariant.SETRANGE("Item No.", Item."No.");
+        recItemVariant.SETRANGE("gevis POS Active", TRUE); // !!!
+        IF recItemVariant.FINDSET() THEN BEGIN
+          // add values for master product
+          pimVariantsObject := pimVariantsObject.JObject();
+
+          // find correct variant set Id
+          IF Item."Gen. Prod. Posting Group" = ActindoSetup."Voucher Product Posting Group" THEN
+            pimVariantsObject.Add(prop.JProperty('variantSetId', ActindoSetup."Voucher Variantset ID"))      // Merchandise Gutscheine Variantenset
+          ELSE IF Item."Flock Item" OR Item."Logo Item" THEN
+            pimVariantsObject.Add(prop.JProperty('variantSetId', ActindoSetup."Flock Variantset ID"))        // Beflockung
+          ELSE
+            pimVariantsObject.Add(prop.JProperty('variantSetId', ActindoSetup."Merchandise Variantset ID")); // Merchandise Grî·e Variantenset
+
+          pimVariantsObject.Add(prop.JProperty('isMasterEntity', 'true'));
+
+          IF NOT IsSave THEN
+            itemObject.Add(prop.JProperty('_pim_variants', pimVariantsObject));
+
+          // decide if we need to transmit flock options
+          IF Item."Web Custom Product" <> '' THEN BEGIN
+            CLEAR(flockItemNo);
+            WebCustomProduct.GET(Item."Web Custom Product");
+            IF WebCustomProduct.Type = WebCustomProduct.Type::flock THEN BEGIN
+              // get flock
+              WebCustomProductLine.RESET();
+              WebCustomProductLine.SETRANGE("Custom Product Code", WebCustomProduct.Code);
+              WebCustomProductLine.SETRANGE(Type, 16); // 16 = Flocks
+              IF WebCustomProductLine.FINDFIRST() THEN
+                flockItemNo := WebCustomProductLine."Item No.";
+              // get logo
+              WebCustomProductLine.SETRANGE(Type, 10); // 10 = Logos
+              WebCustomProductLine.SETRANGE("Sleeve Side", WebCustomProductLine."Sleeve Side"::rechts);
+              IF WebCustomProductLine.FINDFIRST() THEN BEGIN
+                LogoItemNoRight          := WebCustomProductLine."Item No.";
+                LogoItemVariantCodeRight := WebCustomProductLine."Variant Code";
+              END;
+
+              WebCustomProductLine.SETRANGE("Sleeve Side", WebCustomProductLine."Sleeve Side"::links);
+              IF WebCustomProductLine.FINDFIRST() THEN BEGIN
+                LogoItemNoLeft          := WebCustomProductLine."Item No.";
+                LogoItemVariantCodeLeft := WebCustomProductLine."Variant Code";
+              END;
+            END;
+          END;
+
+          REPEAT
+            // general attributes for child
+            itemVarObject := itemVarObject.JObject();
+
+            IF recItemVariant."Actindo POS ID" <> '' THEN
+              itemVarObject.Add(prop.JProperty('id', recItemVariant."Actindo POS ID"));
+
+            itemVarObject.Add(prop.JProperty('sku', recItemVariant."IF Item No. Of Variant"));
+            itemVarObject.Add(prop.JProperty('variantStatus', 'child'));
+
+            //attributeSetId from parent
+            itemVarObject.Add(prop.JProperty('attributeSetId', attributeSetId));
+            itemVarObject.Add(prop.JProperty('_pim_varcode', recItemVariant.Code));
+
+            // set possible flock names
+            IF Item."Flock Item" THEN BEGIN
+              itemVarObject.Add(prop.JProperty('_pim_art_name__actindo_basic__en_US', recItemVariant.Code + '-' + recItemVariant."POS Description"));
+              itemVarObject.Add(prop.JProperty('_pim_art_name__actindo_basic__de_DE', recItemVariant.Code + '-' + recItemVariant."POS Description"));
+            END;
+
+            // set flock options
+            IF flockItemNo <> '' THEN BEGIN
+              flockVariants.RESET();
+              flockVariants.SETRANGE("Item No.", flockItemNo);
+              flockVariants.SETRANGE("gevis POS Active", TRUE);
+              flockVariants.SETFILTER("Actindo POS ID", '<>%1', '');
+              flocksArray := flocksArray.JArray();
+              IF flockVariants.FINDSET() THEN REPEAT
+                flocksArray.Add(flockVariants."Actindo POS ID");
+              UNTIL flockVariants.NEXT() = 0;
+              // add to payload
+              IF flocksArray.Count() > 0 THEN BEGIN
+                pimFlockOptionsObject := pimFlockOptionsObject.JObject();
+                pimFlockOptionsObject.Add(prop.JProperty('ids', flocksArray));
+                itemVarObject.Add(prop.JProperty('_pim_flock_option', pimFlockOptionsObject));
+              END;
+            END;
+
+            // set right logo
+            IF LogoItemNoRight <> '' THEN BEGIN
+              logoVariants.RESET();
+              logoVariants.SETRANGE("Item No.", LogoItemNoRight);
+              IF LogoItemVariantCodeRight <> '' THEN
+                logoVariants.SETRANGE(Code, LogoItemVariantCodeRight);
+              logoVariants.SETRANGE("gevis POS Active", TRUE);
+              logoVariants.SETFILTER("Actindo POS ID", '<>%1', '');
+              logoArray := logoArray.JArray();
+              IF logoVariants.FINDSET() THEN REPEAT
+                logoArray.Add(logoVariants."Actindo POS ID");
+              UNTIL logoVariants.NEXT() = 0;
+              IF logoArray.Count() > 0 THEN BEGIN
+                pimLogoOptionsObject := pimFlockOptionsObject.JObject();
+                pimLogoOptionsObject.Add(prop.JProperty('ids', logoArray));
+                itemVarObject.Add(prop.JProperty('_pim_aermel_logo', pimLogoOptionsObject));
+
+              END;
+            END;
+
+            // set left logo
+            IF LogoItemNoLeft <> '' THEN BEGIN
+              logoVariants.RESET();
+              logoVariants.SETRANGE("Item No.", LogoItemNoLeft);
+              IF LogoItemVariantCodeLeft <> '' THEN
+                logoVariants.SETRANGE(Code, LogoItemVariantCodeLeft);
+              logoVariants.SETRANGE("gevis POS Active", TRUE);
+              logoVariants.SETFILTER("Actindo POS ID", '<>%1', '');
+              CLEAR(logoArray);
+              logoArray := logoArray.JArray();
+              IF logoVariants.FINDSET() THEN REPEAT
+                logoArray.Add(logoVariants."Actindo POS ID");
+              UNTIL logoVariants.NEXT() = 0;
+              IF logoArray.Count() > 0 THEN BEGIN
+                pimLogoOptionsObject := pimFlockOptionsObject.JObject();
+                pimLogoOptionsObject.Add(prop.JProperty('ids', logoArray));
+                itemVarObject.Add(prop.JProperty('_pim_aermel_logo_links', pimLogoOptionsObject));
+              END;
+            END;
+
+            // set flock attributes for flock items
+            IF Item."Flock Item" THEN BEGIN
+              itemVarObject.Add(prop.JProperty('_pim_flock_name', recItemVariant."POS Description"));
+              itemVarObject.Add(prop.JProperty('_pim_flock_number', recItemVariant.Code));
+            END;
+
+            IF Item."Logo Item" THEN BEGIN
+              itemVarObject.Add(prop.JProperty('_pim_flock_name', recItemVariant.Code));
+              itemVarObject.Add(prop.JProperty('_pim_flock_number', '0'));
+
+              itemVarObject.Add(prop.JProperty('_pim_art_name__actindo_basic__en_US', recItemVariant.Code));
+              itemVarObject.Add(prop.JProperty('_pim_art_name__actindo_basic__de_DE', recItemVariant.Code));
+            END;
+
+            // set EAN
+            AssignEAN({ref}itemVarObject, Item, recItemVariant.Code);
+
+            // set prices for variant
+            IF WithPrice THEN
+              AssignPrice({ref}itemVarObject, Item, recItemVariant.Code); //Wird extra gesynched.
+
+            // add to products list
+            JToken := itemVarObject;
+            variantsArray.Add(JToken);
+          UNTIL recItemVariant.NEXT() = 0;
+
+          // add to payload
+          IF variantsArray.Count() > 0 THEN
+            itemObject.Add(prop.JProperty('variants', variantsArray));
+        END;
+      END;
+    END;
+
+    LOCAL PROCEDURE AssignTranslations@5091731(VAR itemObject@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";recItem@5091700 : Record 27);
+    VAR
+      prop@5091708 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      recTranslationDEU@5091705 : Record 30;
+      recTranslationENG@5091704 : Record 30;
+      itemDescription@5091702 : Text;
+      HasDEUTrans@5091706 : Boolean;
+      HasENGTrans@5091707 : Boolean;
+    BEGIN
+      // combine description fields
+      IF recItem."Description 2" <> '' THEN
+        itemDescription := recItem.Description + ' ' + recItem."Description 2"
+      ELSE
+        itemDescription := recItem.Description;
+
+      // find translations
+      WITH recTranslationDEU DO BEGIN
+        RESET();
+        SETRANGE("Item No.", recItem."No.");
+        SETRANGE("Language Code", 'DEU');
+        IF FINDFIRST() THEN
+          HasDEUTrans := TRUE;
+      END;
+
+      WITH recTranslationENG DO BEGIN
+        SETRANGE("Item No.", recItem."No.");
+        SETRANGE("Language Code", 'ENG');
+        IF FINDFIRST() THEN
+          HasENGTrans := TRUE;
+      END;
+
+      // DEU
+      IF HasDEUTrans THEN BEGIN
+        IF recTranslationDEU."Web Keywords" <> '' THEN
+          itemObject.Add(prop.JProperty('_pim_products_keywords__actindo_basic__de_DE', recTranslationDEU."Web Keywords"));
+        IF recTranslationDEU.Description <> '' THEN
+          itemObject.Add(prop.JProperty('_pim_art_name__actindo_basic__de_DE', recTranslationDEU.Description))
+        ELSE
+          itemObject.Add(prop.JProperty('_pim_art_name__actindo_basic__de_DE', itemDescription));
+        IF recTranslationDEU."Web Meta Title" <> '' THEN
+          itemObject.Add(prop.JProperty('_pim_products_meta_title__actindo_basic__de_DE', recTranslationDEU."Web Meta Title"));
+        IF recTranslationDEU."Web Meta Description" <> '' THEN
+          itemObject.Add(prop.JProperty('_pim_products_meta_description__actindo_basic__de_DE', recTranslationDEU."Web Meta Description"));
+      END ELSE
+        itemObject.Add(prop.JProperty('_pim_art_name__actindo_basic__de_DE', itemDescription));
+
+      // ENG
+      IF HasENGTrans THEN BEGIN
+        IF recTranslationENG."Web Keywords" <> '' THEN
+          itemObject.Add(prop.JProperty('_pim_products_keywords__actindo_basic__en_US', recTranslationENG."Web Keywords"));
+
+        IF recTranslationENG.Description <> '' THEN
+          itemObject.Add(prop.JProperty('_pim_art_name__actindo_basic__en_US', recTranslationENG.Description))
+        ELSE
+          itemObject.Add(prop.JProperty('_pim_art_name__actindo_basic__en_US', itemDescription));
+
+        IF recTranslationENG."Web Meta Title" <> '' THEN
+          itemObject.Add(prop.JProperty('_pim_products_meta_title__actindo_basic__en_US', recTranslationENG."Web Meta Title"));
+
+        IF recTranslationENG."Web Meta Description" <> '' THEN
+          itemObject.Add(prop.JProperty('_pim_products_meta_description__actindo_basic__en_US', recTranslationENG."Web Meta Description"));
+      END ELSE
+        itemObject.Add(prop.JProperty('_pim_art_name__actindo_basic__en_US', itemDescription));
+    END;
+
+    LOCAL PROCEDURE AssignTimestamps@5091732(VAR itemObject@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";recItem@5091700 : Record 27;isSave@5091703 : Boolean);
+    VAR
+      prop@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      currentDt@5091702 : Text;
+    BEGIN
+      currentDt := FORMAT(CURRENTDATETIME(), 0, '<Year4>-<Month,2>-<Day,2> <Hour,2>:<Minute,2>:<Second,2>');
+
+      IF NOT isSave THEN BEGIN
+        itemObject.Add(prop.JProperty('created', currentDt));
+        itemObject.Add(prop.JProperty('modified', currentDt));
+      END ELSE BEGIN
+        itemObject.Add(prop.JProperty('modified', currentDt));
+      END;
+    END;
+
+    LOCAL PROCEDURE "### API METHODS ###"@5091717();
+    BEGIN
+    END;
+
+    [TryFunction]
+    LOCAL PROCEDURE TryCreateActindoProduct@5091714(itemNo@5091701 : Code[20];VAR responseText@5091707 : Text;BufferId@5091713 : BigInteger);
+    VAR
+      payload@5091700 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      response@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      JObject@5091706 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      Item@5091702 : Record 27;
+      JArray@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      JObjectVar@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      i@5091708 : Integer;
+      sku@5091709 : Code[20];
+      id@5091710 : Code[20];
+      ItemVariant@5091711 : Record 5401;
+      S04ActindoImageHandler@5091712 : Codeunit 81000;
+      prop@5091714 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+    BEGIN
+      payload := payload.JObject();
+
+      CreateProductJsonObject({ref}payload, itemNo, FALSE, FALSE);
+      payload.Add(prop.JProperty('bufferId', BufferId));
+      payload.Add(prop.JProperty('await', FALSE));
+
+      responseText := SendToMiddleware(payload, 'CREATE_PRODUCT');
+    END;
+
+    [TryFunction]
+    LOCAL PROCEDURE TryCreateFullActindoProduct@5091774(itemNo@5091701 : Code[20];VAR responseText@5091707 : Text;BufferId@5091714 : BigInteger);
+    VAR
+      payload@5091700 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      response@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      JObject@5091706 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      Item@5091702 : Record 27;
+      JArray@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      JObjectVar@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      i@5091708 : Integer;
+      sku@5091709 : Code[20];
+      id@5091710 : Code[20];
+      ItemVariant@5091711 : Record 5401;
+      S04ActindoImageHandler@5091712 : Codeunit 81000;
+      IsCreate@5091713 : Boolean;
+      prop@5091715 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+    BEGIN
+      payload := payload.JObject();
+
+      CreateFullProductJsonObject({ref}payload, itemNo);
+      payload.Add(prop.JProperty('bufferId', BufferId));
+      payload.Add(prop.JProperty('await', FALSE));
+
+      responseText := SendToMiddleware(payload, 'FULL_PRODUCT');
+    END;
+
+    [TryFunction]
+    LOCAL PROCEDURE TrySaveActindoProduct@5091713(ItemNo@5091704 : Code[10];VAR responseText@5091705 : Text;BufferId@5091707 : BigInteger);
+    VAR
+      payload@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      response@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      JObject@5091700 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      prop@5091702 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      Item@5091706 : Record 27;
+    BEGIN
+      payload := payload.JObject();
+
+      CreateProductJsonObject({ref}payload, ItemNo, FALSE, FALSE);
+      payload.Add(prop.JProperty('bufferId', BufferId));
+      payload.Add(prop.JProperty('await', FALSE));
+
+      responseText := SendToMiddleware(payload, 'SAVE_PRODUCT');
+    END;
+
+    [TryFunction]
+    LOCAL PROCEDURE TrySaveActindoInventory@5091755(itemNo@5091701 : Code[20];VAR responseText@5091700 : Text);
+    VAR
+      ReturnText@5091702 : Text;
+      payload@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      response@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      err_no_actindo_id@5091706 : TextConst 'DEU=Bestand Synch. Fehler: Der Artikel %1 existiert bei Actindo nicht.';
+      err_no_stock@5091705 : TextConst 'DEU=Bestand Synch. Fehler: Der Artikel %1 hat keinen Bestand.';
+    BEGIN
+      payload := payload.JObject();
+      ReturnText := CreateInventoryJsonObject(payload, itemNo);
+      CASE ReturnText OF
+        'no_actindo_id':
+          BEGIN
+            ERROR(err_no_actindo_id, itemNo);
+          END;
+        'no_stock':
+          BEGIN
+            ERROR(err_no_stock, itemNo);
+          END;
+      ELSE
+        responseText := SendToMiddleware(payload, 'SAVE_INVENTORY');
+      END;
+    END;
+
+    [TryFunction]
+    LOCAL PROCEDURE TrySaveActindoPrice@5091745(itemNo@5091701 : Code[20];VAR responseText@5091700 : Text;BufferId@5091707 : BigInteger);
+    VAR
+      ReturnText@5091702 : Text;
+      payload@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      response@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      err_no_actindo_id@5091706 : TextConst 'DEU=Bestand Synch. Fehler: Der Artikel %1 existiert bei Actindo nicht.';
+      err_no_stock@5091705 : TextConst 'DEU=Bestand Synch. Fehler: Der Artikel %1 hat keinen Bestand.';
+      prop@5091708 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+    BEGIN
+      payload := payload.JObject();
+      ReturnText := CreatePriceJsonObject(payload, itemNo);
+      payload.Add(prop.JProperty('bufferId', BufferId));
+      payload.Add(prop.JProperty('await', FALSE));
+
+      CASE ReturnText OF
+        'no_actindo_id':
+          BEGIN
+            ERROR(err_no_actindo_id, itemNo);
+          END;
+      ELSE
+        responseText := SendToMiddleware(payload, 'SAVE_PRICE');
+      END;
+    END;
+
+    [TryFunction]
+    LOCAL PROCEDURE TryCreateActindoCustomer@5091706(debNo@5091701 : Code[20];VAR responseText@5091707 : Text);
+    VAR
+      payload@5091700 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      response@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      recDeb@5091705 : Record 18;
+      JObject@5091706 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      recDebExt@5091703 : Record 60018;
+    BEGIN
+      CreateCustomerJsonObject({ref}payload, debNo, TRUE);
+      responseText := SendToMiddleware(payload, 'CREATE_CUSTOMER');
+
+      response := JObject.Parse(responseText);
+
+      // save Actindo Customer ID from responseText on Cust Extended Record
+      IF recDeb.GET(debNo) THEN BEGIN
+        IF NOT recDebExt.GET(recDeb."No.") THEN BEGIN
+          recDebExt.INIT();
+          recDebExt."No." := recDeb."No.";
+          recDebExt.INSERT(TRUE);
+        END;
+        recDebExt."Actindo Customer ID"        := COPYSTR(FORMAT(response.GetValue('customerId')), 1, MAXSTRLEN(recDebExt."Actindo Customer ID"));
+        recDebExt."Actindo Primary Address ID" := COPYSTR(FORMAT(response.GetValue('primaryAddressId')), 1, MAXSTRLEN(recDebExt."Actindo Primary Address ID"));
+        recDebExt."Actindo POS Last Update On" := CREATEDATETIME(TODAY(), TIME());
+        recDebExt.MODIFY(TRUE);
+      END;
+    END;
+
+    [TryFunction]
+    LOCAL PROCEDURE TrySaveActindoCustomer@5091703(debNo@5091700 : Code[10];VAR responseText@5091702 : Text);
+    VAR
+      payload@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      response@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      JObject@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      S04CustomerExtended@5091704 : Record 60018;
+    BEGIN
+
+      CreateCustomerJsonObject({ref}payload, debNo, FALSE);
+      responseText := SendToMiddleware(payload, 'SAVE_CUSTOMER');
+
+      // log refresh on cust ext.
+      S04CustomerExtended.GET(debNo);
+      S04CustomerExtended."Actindo POS Last Update On" := CREATEDATETIME(TODAY(), TIME());
+      S04CustomerExtended.MODIFY(TRUE);
+    END;
+
+    [TryFunction]
+    LOCAL PROCEDURE TryGetTransactions@5091705(S04ActindoSynchBuffer@5091700 : Record 80091;VAR responseText@5091701 : Text);
+    VAR
+      payload@5091702 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      response@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      JObject@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      prop@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+    BEGIN
+      CreateTransactionJsonObject({ref}payload);
+      responseText := SendToMiddleware(payload, 'GET_TRANSACTIONS');
+
+      response := JObject.Parse(responseText);
+
+      CreateTransactionsFromResponse(response);
+
+      // set new last request date
+      ActindoSetup.GET();
+      ActindoSetup."Last Transaction Date" := CREATEDATETIME(TODAY(),TIME());
+      ActindoSetup.MODIFY(TRUE);
+    END;
+
+    LOCAL PROCEDURE "### JSON CREATION ###"@5091710();
+    BEGIN
+    END;
+
+    LOCAL PROCEDURE CreateCustomerJsonObject@5091701(VAR debObject@5091700 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";debNo@5091704 : Code[10];create@5091707 : Boolean);
+    VAR
+      addressObj@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      customerObj@5091702 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      prop@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      recDebitor@5091705 : Record 18;
+      recDebExt@5091706 : Record 60018;
+      CustomerPriceGroup@5091708 : Record 6;
+      customerId@5091709 : Integer;
+      primaryAddressId@5091710 : Integer;
+    BEGIN
+      recDebitor.GET(debNo);
+
+      // no synch. of companies
+      IF recDebitor.Type = recDebitor.Type::Company THEN
+        EXIT;
+
+      debObject   := debObject.JObject();
+      customerObj := customerObj.JObject();
+      addressObj  := addressObj.JObject();
+
+      // ID is just needed for save
+      IF NOT create THEN BEGIN
+        recDebExt.GET(debNo);
+        EVALUATE(customerId, recDebExt."Actindo Customer ID");
+        customerObj.Add(prop.JProperty('id', customerId));
+      END;
+
+      // customer
+      customerObj.Add(prop.JProperty('shortName', recDebitor."First Name" + ' ' + recDebitor.Surname));
+
+      // check for relevant customer price group and determine Actindo customer type (employee/member)
+      IF recDebitor."Telex No." <> '' THEN BEGIN
+        customerObj.Add(prop.JProperty('_customer_customertyp', ActindoSetup."String Value Employee Price"));
+      END ELSE BEGIN
+        IF recDebitor."Customer Price Group" <> '' THEN BEGIN
+          CustomerPriceGroup.GET(recDebitor."Customer Price Group");
+          IF CustomerPriceGroup."Actindo POS Synch." THEN BEGIN
+            CustomerPriceGroup.TESTFIELD("Actindo POS String Value");
+            customerObj.Add(prop.JProperty('_customer_customertyp', CustomerPriceGroup."Actindo POS String Value"));
+          END;
+        END;
+      END;
+
+      customerObj.Add(prop.JProperty('_customer_debitorennumber', debNo));
+
+      // primaryAddress
+      addressObj.Add(prop.JProperty('salutation', recDebitor."Salutation Code"));
+      addressObj.Add(prop.JProperty('company', recDebitor."Company Name"));
+      addressObj.Add(prop.JProperty('name', recDebitor.Surname));
+      addressObj.Add(prop.JProperty('firstName', recDebitor."First Name"));
+      addressObj.Add(prop.JProperty('address', recDebitor.Address));
+      addressObj.Add(prop.JProperty('city', recDebitor.City));
+      addressObj.Add(prop.JProperty('zip', recDebitor."Post Code"));
+      addressObj.Add(prop.JProperty('email', recDebitor."E-Mail"));
+      addressObj.Add(prop.JProperty('phone', recDebitor."Phone No."));
+      addressObj.Add(prop.JProperty('currency', 'EUR'));
+
+      // add to payload
+      debObject.Add(prop.JProperty('customer', customerObj));
+      debObject.Add(prop.JProperty('primaryAddress', addressObj));
+    END;
+
+    PROCEDURE CreateFullProductJsonObject@5091740(VAR payloadObj@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";itemNo@5091700 : Code[20]) Save : Boolean;
+    VAR
+      prop@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      JToken@5091722 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JToken";
+      itemObject@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      PriceObj@5091707 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      ProductObj@5091708 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      Item@5091702 : Record 27;
+      S04ItemServices@5091709 : Codeunit 60052;
+      isFlockItem@5091711 : Boolean;
+      attributeSetId@5091715 : Integer;
+      taxClassId@5091735 : Integer;
+      variantStatus@5091706 : Text;
+      WithId@5091703 : Boolean;
+    BEGIN
+
+      WithId := FALSE;
+      IF Item.GET(itemNo) THEN BEGIN
+        IF Item."Actindo POS ID" <> '' THEN
+          WithId := TRUE;
+
+        PriceObj := PriceObj.JObject();
+        ProductObj := ProductObj.JObject();
+        CreateProductJsonObject({ref}ProductObj, itemNo, WithId, TRUE);
+        ProductObj := ProductObj.Item('product');
+        //CreatePriceJsonObject({ref}PriceObj, itemNo);
+        //PriceObj.Remove('id');
+        //ProductObj.Merge(PriceObj);
+        payloadObj.Add('product', ProductObj);
+
+
+
+        CreateInventoryJsonObject({ref}payloadObj, itemNo);
+      END ELSE BEGIN
+        ERROR('Product %1 does not exist.', itemNo);
+      END;
+
+      EXIT(WithId);
+    END;
+
+    LOCAL PROCEDURE CreateProductJsonObject@5091711(VAR payloadObj@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";itemNo@5091700 : Code[20];isSave@5091717 : Boolean;WithPrice@5091703 : Boolean);
+    VAR
+      prop@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      JToken@5091722 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JToken";
+      itemObject@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      Item@5091702 : Record 27;
+      S04ItemServices@5091709 : Codeunit 60052;
+      isFlockItem@5091711 : Boolean;
+      attributeSetId@5091715 : Integer;
+      taxClassId@5091735 : Integer;
+      variantStatus@5091706 : Text;
+    BEGIN
+      CheckActindoSetup();
+
+      // inits
+      Item.GET(itemNo);
+      Item.CALCFIELDS("Variant Existis");
+
+      itemObject := itemObject.JObject();
+
+      IF Item."Actindo POS ID" <> '' THEN
+        itemObject.Add(prop.JProperty('id', Item."Actindo POS ID"));
+
+      // SKU Master
+      itemObject.Add(prop.JProperty('sku', Item."No."));
+
+      // decide attribute set id
+      IF Item."Flock Item" OR Item."Logo Item" THEN
+        attributeSetId  := ActindoSetup."Flock Attributeset ID" // FLOCKS
+      ELSE
+        attributeSetId  := ActindoSetup."Merchandise Attributeset ID"; // MERCH-ITEMS
+
+      // decide variant status
+      IF NOT Item."Variant Existis" THEN
+        variantStatus := 'single'
+      ELSE
+        variantStatus := 'master';
+
+      // set attribute set id and variant status on payload
+      itemObject.Add(prop.JProperty('variantStatus', variantStatus));
+      itemObject.Add(prop.JProperty('attributeSetId', attributeSetId));
+
+      IF WithPrice THEN
+        AssignPrice({ref}itemObject, Item, '');
+
+      // set catalog
+      AssignCatalog({ref}itemObject, Item);
+
+      // add ean & stocks
+      IF variantStatus = 'single' THEN BEGIN
+        AssignEAN({ref}itemObject, Item, '');
+      END;
+
+      // add translations and texts
+      AssignTranslations({ref}itemObject, Item);
+
+      // set timestamps
+      AssignTimestamps({ref}itemObject, Item, isSave);
+
+      // add variants for master
+      IF variantStatus = 'master' THEN
+        AssignVariants({ref}itemObject, Item, attributeSetId, WithPrice, isSave); // includes inventory
+
+      // finalize payload
+      payloadObj.Add(prop.JProperty('product', itemObject));
+    END;
+
+    LOCAL PROCEDURE CreateTransactionJsonObject@5091747(VAR payloadObj@5091700 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject");
+    VAR
+      prop@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+    BEGIN
+      CheckActindoSetup();
+
+      payloadObj := payloadObj.JObject();
+
+      // add transaction date to payload
+      payloadObj.Add(prop.JProperty('date', GetLastTransactionDateString()));
+    END;
+
+    LOCAL PROCEDURE CreateInventoryJsonObject@5091737(VAR payloadObj@5091700 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";itemNo@5091701 : Code[20]) ReturnText : Text;
+    VAR
+      StocksObj@5091702 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      ItemObj@5091706 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      ItemsObj@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      InventoryObj@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      prop@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      recItemVariant@5091707 : Record 5401;
+      SKU@5091708 : Text;
+      Item@5091709 : Record 27;
+    BEGIN
+      CheckActindoSetup();
+
+      // inits
+      Item.GET(itemNo);
+      Item.CALCFIELDS("Variant Existis");
+
+      StocksObj := StocksObj.JObject();
+      ItemObj := ItemObj.JObject();
+      ItemsObj := ItemsObj.JObject();
+
+
+
+
+
+      IF NOT Item."Variant Existis" THEN BEGIN
+        StocksObj := StocksObj.JObject();
+        AssignInventory({ref}StocksObj, itemNo, '');
+
+        IF NOT StocksObj.HasValues THEN
+          EXIT('no_stock');
+
+        ItemsObj.Add(prop.JProperty(FORMAT(itemNo), StocksObj));
+      END ELSE BEGIN
+        recItemVariant.RESET();
+        recItemVariant.SETRANGE("Item No.", Item."No.");
+        recItemVariant.SETRANGE("gevis POS Active", TRUE); // !!!
+        IF recItemVariant.FINDSET() THEN BEGIN
+          REPEAT
+              StocksObj := StocksObj.JObject();
+
+              AssignInventory(StocksObj, itemNo, recItemVariant.Code);
+
+              SKU := FORMAT(Item."No.") + '-' + recItemVariant.Code;
+              ItemsObj.Add(prop.JProperty(SKU, StocksObj));
+
+
+          UNTIL recItemVariant.NEXT() = 0;
+
+          IF NOT ItemsObj.HasValues THEN
+            EXIT('no_stock');
+
+        END;
+      END;
+
+
+      payloadObj.Add(prop.JProperty('inventories', ItemsObj));
+    END;
+
+    LOCAL PROCEDURE CreatePriceJsonObject@5091738(VAR payloadObj@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";itemNo@5091700 : Code[20]) ReturnText : Text;
+    VAR
+      Item@5091702 : Record 27;
+      prop@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      recItemVariant@5091704 : Record 5401;
+      JToken@5091706 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JToken";
+      VariantsArray@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      VariantObj@5091707 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      MasterObj@5091708 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+    BEGIN
+      CheckActindoSetup();
+      //TODO
+      VariantsArray := VariantsArray.JArray();
+      MasterObj := MasterObj.JObject();
+
+      IF NOT Item.GET(itemNo) THEN
+        EXIT('item_not_found');
+
+
+
+      Item.CALCFIELDS("Variant Existis");
+
+      IF NOT Item."Variant Existis" THEN BEGIN
+
+        payloadObj.Add(prop.JProperty('id', Item."Actindo POS ID"));
+        AssignPrice(payloadObj, Item, '');
+
+      END ELSE BEGIN
+
+        payloadObj.Add(prop.JProperty('id', Item."Actindo POS ID"));
+        AssignPrice(payloadObj, Item, '');
+        JToken := MasterObj;
+        VariantsArray.Add(JToken);
+
+        recItemVariant.RESET();
+        recItemVariant.SETRANGE("Item No.", Item."No.");
+        recItemVariant.SETRANGE("gevis POS Active", TRUE);
+        IF recItemVariant.FINDSET() THEN BEGIN
+          REPEAT
+            VariantObj := VariantObj.JObject();
+            AssignPrice(VariantObj, Item, recItemVariant.Code);
+
+            IF VariantObj.HasValues THEN BEGIN
+              VariantObj.Add(prop.JProperty('id', recItemVariant."Actindo POS ID"));
+              JToken := VariantObj;
+              VariantsArray.Add(JToken);
+            END;
+
+
+          UNTIL recItemVariant.NEXT() = 0;
+          payloadObj.Add(prop.JProperty('variant_prices', VariantsArray));
+
+        END;
+      END;
+    END;
+
+    LOCAL PROCEDURE "### TRANSACTION HANDLING ###"@5091726();
+    BEGIN
+    END;
+
+    LOCAL PROCEDURE CreateTransactionsFromResponse@5091733(response@5091700 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject");
+    VAR
+      JArray@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      JHeader@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      JPositions@5091710 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      JLine@5091712 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      legacyProps@5091707 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      HeaderRec@5091701 : Record 81164;
+      LineRec@5091702 : Record 81165;
+      EntryNo@5091709 : Integer;
+      i@5091704 : Integer;
+      j@5091711 : Integer;
+      TextManagement@5091706 : Codeunit 41;
+      oStream@5091708 : OutStream;
+      docNo@5091713 : Text;
+      docType@5091714 : Text;
+      flockName@5091715 : Text;
+      flockNumber@5091716 : Text;
+      newQuantity@5091717 : Decimal;
+    BEGIN
+      // get data array from response
+      IF NOT response.HasValues() THEN
+        EXIT;
+
+      JArray := JArray.JArray();
+      JArray := response.GetValue('data');
+
+      FOR i := 0 TO JArray.Count() - 1 DO BEGIN
+        JHeader := JHeader.JObject();
+        JHeader := JArray.Item(i);
+
+        docNo   := FORMAT(JHeader.GetValue('documentNumber'));
+
+        // decide document type
+        //docType := FORMAT(JHeader.GetValue('type'));
+        IF HasNegativeAmounts(FORMAT(JHeader.GetValue('saldo'))) THEN
+          docType := 'GU'
+        ELSE
+          docType := FORMAT(JHeader.GetValue('type'));
+
+        // create header
+        IF (docNo <> '') AND (docType <> '') AND (NOT HeaderRec.GET(docNo, docType)) THEN BEGIN
+          CLEAR(HeaderRec);
+          HeaderRec.INIT();
+
+          HeaderRec.Status                      := HeaderRec.Status::Open;
+          HeaderRec."Created At"                := CURRENTDATETIME();
+
+          // misc
+          HeaderRec."Document Number"           := FORMAT(JHeader.GetValue('documentNumber'));
+          HeaderRec."Document Type"             := FORMAT(JHeader.GetValue('type'));
+          HeaderRec."Project ID"                := FORMAT(JHeader.GetValue('projectId'));
+          HeaderRec."Document Date"             := EvaluateDate(JHeader.GetValue('documentDate'));
+          HeaderRec."Value Date"                := EvaluateDate(JHeader.GetValue('valDate'));
+          EVALUATE(HeaderRec."Actindo Document ID", FORMAT(JHeader.GetValue('id')));
+
+          // customer info
+          EVALUATE(HeaderRec."Customer/Supplier ID", FORMAT(JHeader.GetValue('customerSupplierId')));
+          HeaderRec."Customer/Supplier Name"    := FORMAT(JHeader.GetValue('customerSupplierFirstName')) + ' ' + FORMAT(JHeader.GetValue('customerSupplierLastName'));
+          HeaderRec."Customer/Supplier Address" := FORMAT(JHeader.GetValue('customerSupplierAddress'));
+          HeaderRec."Customer/Supplier Zip"     := FORMAT(JHeader.GetValue('customerSupplierZip'));
+          HeaderRec."Customer/Supplier City"    := FORMAT(JHeader.GetValue('customerSupplierCity'));
+          HeaderRec."Customer/Supplier Country" := FORMAT(JHeader.GetValue('customerSupplierCountry2Digit'));
+          HeaderRec."Customer/Supplier Email"   := FORMAT(JHeader.GetValue('customerSupplierEmail'));
+
+          // payment info
+          HeaderRec."Payment Type"              := FORMAT(JHeader.GetValue('paymentType'));
+          HeaderRec."Payment Type Label"        := FORMAT(JHeader.GetValue('paymentTypeLabel'));
+          HeaderRec.Currency                    := FORMAT(JHeader.GetValue('currency'));
+
+          // amounts
+          EVALUATE(HeaderRec."Net Amount", FORMAT(JHeader.GetValue('netto')));
+          EVALUATE(HeaderRec."Gross Amount", FORMAT(JHeader.GetValue('brutto')));
+          EVALUATE(HeaderRec."VAT Percent", FORMAT(JHeader.GetValue('mwstPercent')));
+          EVALUATE(HeaderRec."VAT Amount", FORMAT(JHeader.GetValue('mwstAmount')));
+
+          // shipment info
+          HeaderRec."Delivery Name"             := FORMAT(JHeader.GetValue('deliveryFirstName')) + ' ' + FORMAT(JHeader.GetValue('deliveryLastName'));
+          HeaderRec."Delivery Address"          := FORMAT(JHeader.GetValue('deliveryAddress'));
+          HeaderRec."Delivery Zip"              := FORMAT(JHeader.GetValue('deliveryZip'));
+          HeaderRec."Delivery City"             := FORMAT(JHeader.GetValue('deliveryCity'));
+          HeaderRec."Delivery Country"          := FORMAT(JHeader.GetValue('deliveryCountry2Digit'));
+          HeaderRec."Delivery Email"            := FORMAT(JHeader.GetValue('deliveryEmail'));
+
+          legacyProps := JHeader.GetValue('legacyProperties');
+
+          IF NOT ISNULL(legacyProps) THEN BEGIN
+            IF FORMAT(legacyProps.GetType()) = 'Newtonsoft.Json.Linq.JObject' THEN BEGIN
+
+              IF NOT ISNULL(legacyProps.GetValue('channels_location_id')) THEN
+                EVALUATE(HeaderRec."POS Location ID", FORMAT(legacyProps.GetValue('channels_location_id')));
+
+              IF NOT ISNULL(legacyProps.GetValue('channels_location_name')) THEN
+                HeaderRec."POS Location Name" := FORMAT(legacyProps.GetValue('channels_location_name'));
+
+              IF NOT ISNULL(legacyProps.GetValue('channels_paydesk_id')) THEN
+                EVALUATE(HeaderRec."POS Cashdesk ID", FORMAT(legacyProps.GetValue('channels_paydesk_id')));
+
+              IF NOT ISNULL(legacyProps.GetValue('channels_paydesk_name')) THEN
+                HeaderRec."POS Cashdesk Name" := FORMAT(legacyProps.GetValue('channels_paydesk_name'));
+
+            END;
+          END;
+
+
+          // optional: save origin JSON
+          HeaderRec."JSON Source".CREATEOUTSTREAM(oStream, TEXTENCODING::UTF8);
+          oStream.WRITETEXT(JHeader.ToString());
+
+          HeaderRec.INSERT(TRUE);
+
+          EntryNo := HeaderRec."Entry No.";
+
+          // create lines
+          JPositions := JPositions.JArray();
+          JPositions := JHeader.Property('positions');
+
+          IF NOT ISNULL(JPositions) THEN BEGIN
+            JPositions := JHeader.GetValue('positions');
+
+            FOR j := 0 TO JPositions.Count() - 1 DO BEGIN
+              JLine := JLine.JObject();
+              JLine := JPositions.Item(j);
+
+              CLEAR(LineRec);
+              LineRec.INIT();
+              LineRec."Header Entry No." := EntryNo;
+              LineRec."Line No."         := j + 1;
+
+              EVALUATE(LineRec."Actindo Position ID", FORMAT(JLine.GetValue('id')));
+              EVALUATE(LineRec."Business Document ID", FORMAT(JLine.GetValue('businessDocumentId')));
+
+              LineRec."Item No." := FORMAT(JLine.GetValue('artNr'));
+
+              // check for indi flock
+              CLEAR(flockName);
+              CLEAR(flockNumber);
+              IF STRPOS(LineRec."Item No.", 'INDI') <> 0 THEN BEGIN
+                flockName   := FORMAT(JLine.GetValue('_schalke_position_flock_name'));
+                flockNumber := FORMAT(JLine.GetValue('_schalke_position_flock_number'));
+                LineRec."Item Name" := STRSUBSTNO('INDIFLOCK: %1 %2', flockNumber, flockName);
+              END ELSE BEGIN
+                LineRec."Item Name" := FORMAT(JLine.GetValue('artName'));
+              END;
+
+              // no negative signs in quantities
+              EVALUATE(newQuantity, FORMAT(JLine.GetValue('menge')));
+              newQuantity := ABS(newQuantity);
+              LineRec.VALIDATE(Quantity, newQuantity);
+
+              LineRec."Unit Of Measure"  := FORMAT(JLine.GetValue('einheit'));
+
+              EVALUATE(LineRec."Unit Price", FORMAT(JLine.GetValue('preis')));
+              EVALUATE(LineRec."Amount incl. VAT", FORMAT(JLine.GetValue('brutto')));
+              EVALUATE(LineRec."Amount excl. VAT", FORMAT(JLine.GetValue('netto')));
+              EVALUATE(LineRec.VATPercent, FORMAT(JLine.GetValue('mwst')));
+
+              LineRec."VAT Identifier"  := FORMAT(JLine.GetValue('mwstStkey'));
+
+              IF FORMAT(JLine.GetValue('grundpreis')) <> '' THEN
+                EVALUATE(LineRec."Base Price", FORMAT(JLine.GetValue('grundpreis')));
+
+              LineRec.Description       := TextManagement.HTML2ANSI(FORMAT(JLine.GetValue('langtext')));
+              LineRec."Bin Code"        := FORMAT(JLine.GetValue('lagerFaecher'));
+
+              LineRec.Status            := LineRec.Status::Open;
+              LineRec."Created At"      := CURRENTDATETIME();
+
+              // save origin JSON
+              LineRec."JSON Source".CREATEOUTSTREAM(oStream, TEXTENCODING::UTF8);
+              oStream.WRITETEXT(JLine.ToString());
+
+              LineRec.INSERT(TRUE);
+            END;
+          END;
+        END;
+      END;
+    END;
+
+    PROCEDURE ProcessTransactionsEntries@5091722();
+    VAR
+      S04ActindoTransBuffHeader@5091700 : Record 81164;
+      CreatedSalesOrderNo@5091701 : Code[10];
+    BEGIN
+      S04ActindoTransBuffHeader.RESET();
+      S04ActindoTransBuffHeader.SETRANGE(Status, S04ActindoTransBuffHeader.Status::Open);
+      S04ActindoTransBuffHeader.SETRANGE(Processed, FALSE);
+      IF S04ActindoTransBuffHeader.FINDSET() THEN REPEAT
+        ProcessSingleTransactionEntry({ref}S04ActindoTransBuffHeader);
+      UNTIL S04ActindoTransBuffHeader.NEXT() = 0;
+    END;
+
+    PROCEDURE ProcessSingleTransactionEntry@5091724(VAR S04ActindoTransBuffHeader@5091700 : Record 81164);
+    VAR
+      Success@5091701 : Boolean;
+      CreatedSalesOrderNo@5091702 : Code[20];
+      StartTime@5091703 : Time;
+      EndTime@5091704 : Time;
+    BEGIN
+      IF S04ActindoTransBuffHeader.Status <> S04ActindoTransBuffHeader.Status::Open THEN
+        EXIT;
+
+      StartTime := TIME();
+      Success   := FALSE;
+
+      CLEAR(CreatedSalesOrderNo);
+
+      S04ActindoTransBuffHeader.Status := S04ActindoTransBuffHeader.Status::InProgress;
+      S04ActindoTransBuffHeader.MODIFY(TRUE);
+
+      // try to process the transaction
+      SELECTLATESTVERSION();
+      Success := TryCreateSalesOrderFromBuffer({ref}S04ActindoTransBuffHeader, {ref}CreatedSalesOrderNo);
+
+      IF Success THEN BEGIN
+        EndTime := TIME();
+        S04ActindoTransBuffHeader.Status                      := S04ActindoTransBuffHeader.Status::Processed;
+        S04ActindoTransBuffHeader.Processed                   := TRUE;
+        S04ActindoTransBuffHeader."Processed By"              := USERID();
+        S04ActindoTransBuffHeader."Processed On"              := CURRENTDATETIME();
+        S04ActindoTransBuffHeader."Processed to Document No." := CreatedSalesOrderNo;
+        S04ActindoTransBuffHeader."Error Message"             := '';
+        S04ActindoTransBuffHeader.MODIFY(TRUE);
+        COMMIT();
+      END ELSE BEGIN
+        ASSERTERROR ERROR(GETLASTERRORTEXT());
+        S04ActindoTransBuffHeader.Status          := S04ActindoTransBuffHeader.Status::Error;
+        S04ActindoTransBuffHeader."Error Message" := DELSTR(GETLASTERRORTEXT(), 250);
+        S04ActindoTransBuffHeader."Processed By"  := USERID();
+        S04ActindoTransBuffHeader."Processed On"  := CURRENTDATETIME();
+        S04ActindoTransBuffHeader.MODIFY(TRUE);
+        COMMIT();
+      END;
+    END;
+
+    [TryFunction]
+    PROCEDURE TryCreateSalesOrderFromBuffer@5091721(VAR BufferHeader@5091705 : Record 81164;VAR SalesOrderNo@5091706 : Code[20]);
+    VAR
+      SalesHeader@5091704 : Record 36;
+      SalesLine@5091703 : Record 37;
+      SalesInvoiceHeader@5091714 : Record 112;
+      SalesCrMemoHeader@5091715 : Record 114;
+      BufferLine@5091702 : Record 81165;
+      SPVoucherEntry@5091717 : Record 5091712;
+      LineNo@5091700 : Integer;
+      DocType@5091708 : Option;
+      err_txt_DocAlrProc@5091709 : TextConst 'DEU=Transaktion %1 wurde bereits in Beleg %2 verarbeitet.';
+      RespCenterCode@5091710 : Code[20];
+      LocationCode@5091711 : Code[20];
+      ItemNo@5091712 : Code[20];
+      VarCode@5091713 : Code[20];
+      err_txt_State@5091701 : TextConst 'DEU=Status von Transaktion %1 ist nicht mehr "Offen" oder "In Verarbeitung".';
+      err_alreadyPosted@5091716 : TextConst 'DEU=Transaktion %1 wurde bereits in Beleg %2 verbucht.';
+      err_ItemNotFound@5091718 : TextConst 'DEU=Artikel %1 konnte nicht gefunden werden.';
+      err_voucherPostingFailed@5091724 : TextConst 'DEU=Einlîsung von Gutschein %1 in Beleg %2 nicht mîglich.';
+      err_docTypeNotMapped@5091725 : TextConst 'DEU=Transaktionsart %1 kann keiner Belegart zugeordnet werden.';
+      PostingText@5091707 : TextConst 'DEU=%1 / Store %2 %3';
+      CustInfo@5091719 : Text;
+      S04VoucherServices@5091720 : Codeunit 60077;
+      S04FinAccServices@5091728 : Codeunit 5091806;
+      ReleaseSalesDocument@5091727 : Codeunit 414;
+      SPVoucher@5091721 : Record 5091710;
+      SPVoucherManagement@5091726 : Codeunit 5178256;
+      TotalVoucherAmount@5091729 : Decimal;
+      PaymentAmount@5091730 : Decimal;
+      VoucherRedemptionAmount@5091722 : Decimal;
+      VoucherBufferLine@5091723 : Record 81165;
+      Item@5091731 : Record 27;
+      IndiFlockText@5091732 : Text[30];
+      POSCashdeskID@5091733 : Text;
+    BEGIN
+      // check buffer status
+      IF SalesInvoiceHeaderExists(BufferHeader) OR (BufferHeader.Status = BufferHeader.Status::Processed) THEN
+        ERROR(err_txt_State, BufferHeader."Document Number");
+
+      // TEMP
+      // no processing for transactions with voucher redemptions
+      BufferHeader.CALCFIELDS("Voucher Lines exist");
+      IF BufferHeader."Voucher Lines exist" THEN
+        ERROR('Processing of transactions with voucher lines currently not supported.');
+      // TEMP
+
+      IF NOT (BufferHeader.Status = BufferHeader.Status::Open) THEN
+        IF NOT (BufferHeader.Status = BufferHeader.Status::InProgress) THEN
+          ERROR(err_txt_State, BufferHeader."Document Number");
+
+      CheckActindoSetup();
+
+      // decide document type
+      CASE BufferHeader."Document Type" OF
+        // sales invoices
+        'RB': DocType := SalesHeader."Document Type"::Invoice;
+        // credit memos
+        'GU': DocType := SalesHeader."Document Type"::"Credit Memo";
+      ELSE
+        ERROR(err_docTypeNotMapped, BufferHeader."Document Type");
+      END;
+
+      // check if transaction was already processed
+      IF BufferHeader."Project ID" <> '' THEN BEGIN
+        // check for open sales invoices
+        IF DocType = 2 THEN BEGIN
+          SalesHeader.RESET();
+          SalesHeader.SETRANGE("Document Type", SalesHeader."Document Type"::Invoice);
+          SalesHeader.SETRANGE("External Document No.", BufferHeader."Project ID");
+          IF SalesHeader.FINDFIRST() THEN
+            ERROR(err_txt_DocAlrProc, BufferHeader."Project ID", SalesHeader."No.");
+        END;
+
+        // check for open sales credit memos
+        IF DocType = 3 THEN BEGIN
+          SalesHeader.RESET();
+          SalesHeader.SETRANGE("Document Type", SalesHeader."Document Type"::"Credit Memo");
+          SalesHeader.SETRANGE("External Document No.", BufferHeader."Project ID");
+          IF SalesHeader.FINDFIRST() THEN
+            ERROR(err_txt_DocAlrProc, BufferHeader."Project ID", SalesHeader."No.");
+        END;
+
+        // check for already posted sales invoices
+        IF DocType = 2 THEN BEGIN
+          SalesInvoiceHeader.RESET();
+          SalesInvoiceHeader.SETRANGE("External Document No.", BufferHeader."Project ID");
+          IF SalesInvoiceHeader.FINDFIRST() THEN
+            ERROR(err_alreadyPosted, BufferHeader."Project ID", SalesInvoiceHeader."No.", FALSE);
+        END;
+
+        // check for already existing posted sales credit memo
+        IF DocType = 3 THEN BEGIN
+          SalesCrMemoHeader.RESET();
+          SalesCrMemoHeader.SETRANGE("External Document No.", BufferHeader."Project ID");
+          IF SalesCrMemoHeader.FINDFIRST() THEN
+            ERROR(err_alreadyPosted, BufferHeader."Project ID", SalesCrMemoHeader."No.", FALSE);
+        END;
+      END;
+
+      // create new sales order (header)
+      SalesHeader.INIT();
+      SalesHeader."Document Type" := DocType;
+      SalesHeader.VALIDATE("Document Date", BufferHeader."Document Date");
+      SalesHeader.VALIDATE("Posting Date", BufferHeader."Document Date");
+      SalesHeader.VALIDATE("Order Date", BufferHeader."Document Date");
+      SalesHeader.VALIDATE("External Document No.", BufferHeader."Project ID");
+      SalesHeader.VALIDATE("Web Order ID", BufferHeader."Project ID");
+      SalesHeader.VALIDATE("External Shop", TRUE);
+      SalesHeader.VALIDATE(Status, SalesHeader.Status::Open);
+
+      SalesHeader.VALIDATE("Document Source", SalesHeader."Document Source"::POS);
+      SalesHeader.VALIDATE("POS ID", FORMAT(BufferHeader."POS Cashdesk ID"));
+
+      // set actindo salesperson
+      // !!! ATTENTION: MUST BE SET, OTHERWISE VOUCHER REDEMPTION IS NOT POSSIBLE !!! ATTENTION !!!
+      SalesHeader."Salesperson Code" := ActindoSetup."Salesperson Transactions";
+
+      // Customer Info
+      CustInfo := FindCustomerBasedOnTransaction(BufferHeader);
+      IF CustInfo <> '' THEN
+        SalesHeader.VALIDATE("Sell-to Customer No.", FindCustomerBasedOnTransaction(BufferHeader))
+      ELSE
+        SalesHeader.VALIDATE("Sell-to Customer No.", ActindoSetup."Standard Customer Account"); //collective customer Barverkauf Fanartikel
+
+      // Payment Method
+      CASE BufferHeader."Payment Type" OF
+        'B' : SalesHeader.VALIDATE("Payment Method Code", ActindoSetup."Payment Method Code BAR");
+        'EC': SalesHeader.VALIDATE("Payment Method Code", ActindoSetup."Payment Method Code EC");
+         // ...
+      END;
+
+      // Location Info
+      FindLocationBasedOnTransaction(BufferHeader, {ref}RespCenterCode, {ref}LocationCode);
+      SalesHeader.VALIDATE("Responsibility Center", RespCenterCode);
+      SalesHeader.VALIDATE("Location Code", LocationCode);
+
+      // set posting description
+      {
+      SalesHeader.VALIDATE("Posting Description", STRSUBSTNO(PostingText,
+                                                             BufferHeader."Project ID",
+                                                             BufferHeader."POS Location ID",
+                                                             BufferHeader."POS Location Name"));
+      }
+
+      //SalesHeader.VALIDATE("Currency Code", BufferHeader.Currency);
+      SalesHeader.VALIDATE("Prices Including VAT", TRUE);
+
+      SalesHeader.INSERT(TRUE);
+
+      // set return value for order no.
+      CLEAR(SalesOrderNo);
+      SalesOrderNo := SalesHeader."No.";
+
+      // create lines
+      BufferLine.SETRANGE("Header Entry No.", BufferHeader."Entry No.");
+      // ignore voucher lines
+      BufferLine.SETFILTER("Item No.", '<>%1&<>%2', 'RG', '');
+      IF BufferLine.FINDSET() THEN BEGIN
+        REPEAT
+          SalesLine.INIT();
+          SalesLine.VALIDATE("Document Type", SalesHeader."Document Type");
+          SalesLine.VALIDATE("Document No.", SalesHeader."No.");
+          SalesLine.VALIDATE("Line No.", LineNo);
+          //SalesLine.VALIDATE("External Document No.", BufferHeader."Project ID");
+          SalesLine.INSERT(TRUE);
+
+          // set item
+          SalesLine.VALIDATE(Type, SalesLine.Type::Item);
+          GetItemNoFromBufferLine(BufferLine, {ref}ItemNo, {ref}VarCode);
+          IF ItemNo = '' THEN
+            ERROR(err_ItemNotFound, BufferLine."Item No.");
+          IF ItemNo <> '' THEN
+            SalesLine.VALIDATE("No.", ItemNo);
+          IF VarCode <> '' THEN
+            SalesLine.VALIDATE("Variant Code", VarCode);
+
+          SalesLine.VALIDATE("Unit of Measure Code", BufferLine."Unit Of Measure");
+          SalesLine.VALIDATE(Quantity, BufferLine.Quantity);
+          SalesLine.VALIDATE("Unit Price", BufferLine."Unit Price");
+          SalesLine.VALIDATE("VAT %", BufferLine.VATPercent);
+
+          // set possible discounts
+          ApplyPossibleDiscountFromBufferLine({ref}SalesLine, BufferLine);
+
+          SalesLine.VALIDATE("Location Code", LocationCode);
+          //SalesLine.VALIDATE("Bin Code", BufferLine."Bin Code");
+          //SalesLine.VALIDATE(Description, BufferLine."Item Name");
+
+          // set indi flock values
+          CLEAR(IndiFlockText);
+          IF IsIndiFlock(BufferLine."Item Name", {ref}IndiFlockText) THEN
+            SalesLine.VALIDATE("Description 2", IndiFlockText);
+
+          SalesLine.MODIFY(TRUE);
+
+          LineNo += 10000;
+
+          // add potential flock and logo items
+          IF IndiFlockText <> '' THEN
+            ExplodePotentialBOMComponents(SalesLine, {ref}LineNo, TRUE)
+          ELSE
+            ExplodePotentialBOMComponents(SalesLine, {ref}LineNo, FALSE);
+
+        UNTIL BufferLine.NEXT() = 0;
+
+        ReleaseSalesDocument.PerformManualRelease(SalesHeader);
+
+        // check if we need to add voucher redemption lines
+        BufferHeader.CALCFIELDS("Voucher Lines exist");
+        IF BufferHeader."Voucher Lines exist" THEN BEGIN
+          VoucherBufferLine.RESET();
+          VoucherBufferLine.SETRANGE("Header Entry No.", BufferHeader."Entry No.");
+          VoucherBufferLine.SETFILTER("Item No.", 'RG|%1', '');
+          IF VoucherBufferLine.FINDSET() THEN REPEAT
+            CLEAR(SPVoucherManagement);
+            IF SPVoucherManagement.TestVoucher(VoucherBufferLine."Item Name", '') THEN BEGIN
+              SPVoucher.GET(UPPERCASE(VoucherBufferLine."Item Name"));
+
+              TotalVoucherAmount += ABS(VoucherBufferLine."Amount incl. VAT");
+
+
+              SPVoucherEntry.RESET();
+              SPVoucherEntry.SETRANGE(Postenart, SPVoucherEntry.Postenart::Einlîsung);
+              SPVoucherEntry.SETRANGE(Gutscheinnummer, SPVoucher.Nummer);
+              SPVoucherEntry.SETRANGE("Zug. Belegnr.", BufferHeader."Project ID");
+
+              CLEAR(S04VoucherServices);
+
+              {
+              IF NOT S04VoucherServices.TryRedeemVoucherWithSalesHeader(SalesHeader."No.", SPVoucher.Nummer) THEN
+                ASSERTERROR ERROR(GETLASTERRORTEXT());
+              }
+
+            END;
+          UNTIL VoucherBufferLine.NEXT() = 0;
+        END;
+      END;
+
+
+      COMMIT();
+    END;
+
+    LOCAL PROCEDURE ExplodePotentialBOMComponents@5091725(SalesLine@5091700 : Record 37;VAR LineNo@5091701 : Integer;IsIndiFlock@5091707 : Boolean);
+    VAR
+      Item@5091702 : Record 27;
+      ItemVariant@5091705 : Record 5401;
+      BOMComponent@5091703 : Record 90;
+      NewSalesLine@5091704 : Record 37;
+      Counter@5091706 : Integer;
+      IndiBackNos@5091708 : Text;
+      ItemBackNo1@5091709 : Record 27;
+      ItemBackNo2@5091710 : Record 27;
+    BEGIN
+      // check if item exists
+      IF NOT Item.GET(SalesLine."No.") THEN
+        EXIT;
+
+      // only process if item is a flock item
+      IF NOT Item."Flock Item" THEN
+        EXIT;
+
+      // variant Code must be set
+      IF SalesLine."Variant Code" = '' THEN
+        EXIT;
+
+      // check if item variant exists and has an Assembly BOM
+      IF NOT ItemVariant.GET(SalesLine."No.", SalesLine."Variant Code") THEN
+        EXIT;
+
+      ItemVariant.CALCFIELDS("Assembly BOM");
+      IF NOT ItemVariant."Assembly BOM" THEN
+        EXIT;
+
+      // loop through BOM components and create new sales lines
+      BOMComponent.RESET();
+      BOMComponent.SETRANGE("Parent Item No.", Item."No.");
+      BOMComponent.SETRANGE("Parent Variant Code", SalesLine."Variant Code");
+      IF BOMComponent.FINDSET() THEN BEGIN
+        REPEAT
+          CLEAR(NewSalesLine);
+          NewSalesLine.INIT();
+
+          NewSalesLine.VALIDATE("Document Type", SalesLine."Document Type");
+          NewSalesLine.VALIDATE("Document No.", SalesLine."Document No.");
+          NewSalesLine.VALIDATE("Line No.", LineNo);
+          NewSalesLine.VALIDATE(Type, NewSalesLine.Type::Item);
+          NewSalesLine.VALIDATE("No.", BOMComponent."No.");
+          NewSalesLine.VALIDATE("Variant Code", BOMComponent."Variant Code");
+          NewSalesLine.VALIDATE("Attached to Line No.", SalesLine."Line No.");
+          NewSalesLine.VALIDATE("Location Code", SalesLine."Location Code");
+          NewSalesLine.VALIDATE(Quantity, SalesLine.Quantity);
+          NewSalesLine.VALIDATE("Unit Price", 0);
+
+          NewSalesLine.INSERT(TRUE);
+          LineNo += 10000;
+        UNTIL BOMComponent.NEXT() = 0;
+      END;
+
+      IF IsIndiFlock THEN BEGIN
+        IndiBackNos := DELSTR(SalesLine."Description 2", {0}4);
+
+        FindIndiFlockCiphers(IndiBackNos, {ref}ItemBackNo1, {ref}ItemBackNo2);
+
+        IF ItemBackNo2."No." <> '' THEN BEGIN
+          CLEAR(NewSalesLine);
+          NewSalesLine.INIT();
+          NewSalesLine.VALIDATE("Document Type", SalesLine."Document Type");
+          NewSalesLine.VALIDATE("Document No.", SalesLine."Document No.");
+          NewSalesLine.VALIDATE("Line No.", LineNo);
+          NewSalesLine.VALIDATE(Type, NewSalesLine.Type::Item);
+          NewSalesLine.VALIDATE("No.", ItemBackNo2."No.");
+          NewSalesLine.VALIDATE("Variant Code", BOMComponent."Variant Code");
+          NewSalesLine.VALIDATE("Attached to Line No.", SalesLine."Line No.");
+          NewSalesLine.VALIDATE("Location Code", SalesLine."Location Code");
+          NewSalesLine.VALIDATE(Quantity, SalesLine.Quantity);
+          NewSalesLine.VALIDATE("Unit Price", 0);
+
+          NewSalesLine.INSERT(TRUE);
+          LineNo += 10000;
+        END;
+
+        NewSalesLine.INIT();
+        NewSalesLine.VALIDATE("Document Type", SalesLine."Document Type");
+        NewSalesLine.VALIDATE("Document No.", SalesLine."Document No.");
+        NewSalesLine.VALIDATE("Line No.", LineNo);
+        NewSalesLine.VALIDATE(Type, NewSalesLine.Type::Item);
+        NewSalesLine.VALIDATE("No.", ItemBackNo1."No.");
+        NewSalesLine.VALIDATE("Variant Code", BOMComponent."Variant Code");
+        NewSalesLine.VALIDATE("Attached to Line No.", SalesLine."Line No.");
+        NewSalesLine.VALIDATE("Location Code", SalesLine."Location Code");
+        NewSalesLine.VALIDATE(Quantity, SalesLine.Quantity);
+        NewSalesLine.VALIDATE("Unit Price", 0);
+
+        NewSalesLine.INSERT(TRUE);
+        LineNo += 10000;
+      END;
+    END;
+
+    LOCAL PROCEDURE "### HELPERS ###"@5091719();
+    BEGIN
+    END;
+
+    LOCAL PROCEDURE ApplyPossibleDiscountFromBufferLine@5091746(VAR SalesLine@5091700 : Record 37;BufferLine@5091701 : Record 81165) : Boolean;
+    VAR
+      iStream@5091702 : InStream;
+      json@5091703 : Text;
+      JLine@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      RabattProzent@5091705 : Decimal;
+      RabattBetrag@5091706 : Decimal;
+      RabattProzentText@5091707 : Text;
+      RabattBetragText@5091708 : Text;
+      LineAmount@5091709 : Decimal;
+    BEGIN
+      IF BufferLine.ISEMPTY() THEN
+        EXIT(FALSE);
+
+      BufferLine.CALCFIELDS("JSON Source");
+      BufferLine."JSON Source".CREATEINSTREAM(iStream, TEXTENCODING::UTF8);
+      iStream.READTEXT(json);
+
+      IF (json = '') OR (json = '{') THEN
+        EXIT(FALSE);
+
+      JLine := JLine.JObject();
+      JLine := JLine.Parse(json);
+
+      RabattProzentText := FORMAT(JLine.GetValue('rabattProzent'));
+      IF RabattProzentText <> '' THEN BEGIN
+        IF EVALUATE(RabattProzent, RabattProzentText) AND (RabattProzent <> 0) THEN BEGIN
+          SalesLine.VALIDATE("Line Discount %", RabattProzent);
+          EXIT(TRUE);
+        END;
+      END;
+
+      RabattBetragText := FORMAT(JLine.GetValue('rabattBetrag'));
+      IF RabattBetragText = '' THEN
+        EXIT(FALSE);
+
+      IF NOT EVALUATE(RabattBetrag, RabattBetragText) THEN
+        EXIT(FALSE);
+
+      IF RabattBetrag = 0 THEN
+        EXIT(FALSE);
+
+      LineAmount := ABS(BufferLine.Quantity * BufferLine."Unit Price");
+      IF LineAmount = 0 THEN
+        EXIT(FALSE);
+
+      RabattProzent := ROUND(ABS(RabattBetrag) / LineAmount * 100, 0.00001, '=');
+      IF RabattProzent = 0 THEN
+        EXIT(FALSE);
+
+      SalesLine.VALIDATE("Line Discount %", RabattProzent);
+      EXIT(TRUE);
+    END;
+
+    LOCAL PROCEDURE BuildPriceObject@5091742(VAR priceObj@5091706 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";VAR currenciesArray@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";VAR currencyObj@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";price@5091700 : Decimal;isGross@5091701 : Boolean;taxClassId@5091702 : Integer);
+    VAR
+      prop@5091707 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      JToken@5091708 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JToken";
+      basePriceObj@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+    BEGIN
+      priceObj        := priceObj.JObject();
+      currenciesArray := currenciesArray.JArray();
+      currencyObj     := currencyObj.JObject();
+      basePriceObj    := basePriceObj.JObject();
+
+      currencyObj.Add(prop.JProperty('currency', 'EUR'));
+      basePriceObj.Add(prop.JProperty('isGross', isGross));
+      basePriceObj.Add(prop.JProperty('price', price));
+      currencyObj.Add(prop.JProperty('basePrice', basePriceObj));
+
+      JToken := currencyObj;
+      currenciesArray.Add(JToken);
+
+      priceObj.Add(prop.JProperty('currencies', currenciesArray));
+      priceObj.Add(prop.JProperty('taxClassId', taxClassId));
+    END;
+
+    LOCAL PROCEDURE CreateProductBufferEntriesBatch@5091720(limiter@5091701 : Integer);
+    VAR
+      Item@5091700 : Record 27;
+      i@5091702 : Integer;
+    BEGIN
+      // initial transmission for products
+      WITH Item DO BEGIN
+        RESET();
+        SETRANGE(POS, TRUE);
+        SETRANGE("Item Status", "Item Status"::Released);
+        IF FINDSET(TRUE, FALSE) THEN BEGIN
+          REPEAT
+            TransferToSynchBuffer('product', "No.");
+            i += 1;
+          UNTIL (NEXT() = 0) OR (i = limiter);
+        END;
+      END;
+    END;
+
+    LOCAL PROCEDURE CreateCustomerBufferEntriesBatch@5091716(limiter@5091701 : Integer);
+    VAR
+      recDeb@5091700 : Record 18;
+      i@5091702 : Integer;
+    BEGIN
+      // initial transmission for customers
+      recDeb.RESET();
+      recDeb.SETRANGE(Type, recDeb.Type::Person);
+      recDeb.SETRANGE(Blocked, recDeb.Blocked::" ");
+      recDeb.SETFILTER("Block Reason", '');
+      recDeb.SETFILTER("Telex No.", '<>%1', '');
+      IF recDeb.FINDSET THEN BEGIN
+        REPEAT
+          TransferToSynchBuffer('customer', recDeb."No.");
+          i += 1;
+        UNTIL (recDeb.NEXT = 0) OR (i = limiter);
+      END;
+    END;
+
+    LOCAL PROCEDURE DateTime2UnixTimestamp@5091723(dt@5091701 : DateTime) : Integer;
+    VAR
+      unixEpoch@5091700 : DateTime;
+    BEGIN
+      // creates a unix timestamp from NAV-DateTime field
+      unixEpoch := CREATEDATETIME(DMY2DATE(1, 1, 1970), 0T);
+
+      IF dt = 0DT THEN
+        dt := CREATEDATETIME(DMY2DATE(1, 1, 2037), 0T);
+
+      EXIT(ROUND((dt - unixEpoch) / 1000, 1, '<'));
+    END;
+
+    LOCAL PROCEDURE EvaluateDate@5091736(Value@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JToken") : Date;
+    VAR
+      DateText@5091700 : Text;
+      OutDate@5091702 : Date;
+      Year@5091703 : Integer;
+      Month@5091704 : Integer;
+      Day@5091705 : Integer;
+    BEGIN
+      // takes a JSON date value in format "2025-04-19" and converts it to C/AL-Datetype
+      DateText := FORMAT(Value);
+
+      IF STRLEN(DateText) >= 10 THEN BEGIN
+        EVALUATE(Year,  COPYSTR(DateText, 1, 4));
+        EVALUATE(Month, COPYSTR(DateText, 6, 2));
+        EVALUATE(Day,   COPYSTR(DateText, 9, 2));
+        EXIT(DMY2DATE(Day, Month, Year));
+      END;
+
+      EXIT(0D);
+    END;
+
+    LOCAL PROCEDURE FindLocationBasedOnTransaction@5091749(S04ActindoTransBuffHeader@5091700 : Record 81164;VAR RespCenterCode@5091701 : Code[20];VAR LocationCode@5091702 : Code[20]);
+    VAR
+      Location@5091703 : Record 14;
+      err001@5091704 : TextConst 'DEU=Keine Storeinformationen zur Transaktion vorhanden.;ENU=No Store-Information for transaction.';
+    BEGIN
+      IF S04ActindoTransBuffHeader.ISEMPTY() THEN
+        EXIT;
+
+      CLEAR(RespCenterCode);
+      CLEAR(LocationCode);
+
+      Location.RESET();
+      Location.SETRANGE("Actindo POS Location Name", S04ActindoTransBuffHeader."POS Location Name");
+      IF Location.FINDFIRST() THEN BEGIN
+        LocationCode   := Location.Code;
+        RespCenterCode := Location."Responsibility Center";
+      END ELSE BEGIN
+        ERROR(err001);
+      END;
+    END;
+
+    LOCAL PROCEDURE FindCustomerBasedOnTransaction@5091739(BufferHeader@5091700 : Record 81164) : Code[20];
+    VAR
+      Customer@5091701 : Record 18;
+      S04CustomerExtended@5091702 : Record 60018;
+    BEGIN
+      // tries to find a customer based on actindo customer Id
+      IF BufferHeader.ISEMPTY() THEN
+        EXIT('');
+
+      S04CustomerExtended.RESET();
+      S04CustomerExtended.SETRANGE("Actindo Customer ID", FORMAT(BufferHeader."Customer/Supplier ID"));
+      IF S04CustomerExtended.FINDFIRST() THEN BEGIN
+        IF Customer.GET(S04CustomerExtended."No.") THEN
+          EXIT(Customer."No.");
+      END;
+
+      EXIT('');
+    END;
+
+    LOCAL PROCEDURE GetItemNoFromBufferLine@5091734(BufferLine@5091701 : Record 81165;VAR ItemNo@5091704 : Code[20];VAR VarCode@5091705 : Code[20]);
+    VAR
+      DividerPos@5091700 : Integer;
+    BEGIN
+      // takes a value combination of itemNo & VarCode (like "30101-M")
+      // and divides it into seperated values ("30101", "M")
+      IF BufferLine.ISEMPTY() THEN
+        EXIT;
+
+      CLEAR(ItemNo);
+      CLEAR(VarCode);
+      CLEAR(DividerPos);
+
+      // find position of "-"
+      DividerPos := STRPOS(BufferLine."Item No.", '-');
+
+      IF DividerPos > 1 THEN BEGIN
+        // extract/split string
+        ItemNo  := COPYSTR(BufferLine."Item No.", 1, DividerPos - 1);
+        VarCode := COPYSTR(BufferLine."Item No.", DividerPos + 1, STRLEN(BufferLine."Item No.") - DividerPos);
+      END ELSE BEGIN
+        ItemNo  := BufferLine."Item No.";
+        VarCode := '';
+      END;
+    END;
+
+    LOCAL PROCEDURE CheckActindoSetup@5091735();
+    BEGIN
+      // check of all relevant setup fields
+      ActindoSetup.GET();
+      ActindoSetup.TESTFIELD("Flock Attributeset ID");
+      ActindoSetup.TESTFIELD("Merchandise Attributeset ID");
+      ActindoSetup.TESTFIELD("Flock Variantset ID");
+      ActindoSetup.TESTFIELD("Merchandise Variantset ID");
+      ActindoSetup.TESTFIELD("Voucher Variantset ID");
+      ActindoSetup.TESTFIELD("Free Taxclass ID");
+      ActindoSetup.TESTFIELD("Reduced Taxclass ID");
+      ActindoSetup.TESTFIELD("Default Taxclass ID");
+      ActindoSetup.TESTFIELD("Standard Customer Account");
+      ActindoSetup.TESTFIELD("Voucher Product Posting Group");
+      ActindoSetup.TESTFIELD("String Value Employee Price");
+      ActindoSetup.TESTFIELD("Payment Method Code BAR");
+      ActindoSetup.TESTFIELD("Payment Method Code EC");
+      ActindoSetup.TESTFIELD("Salesperson Transactions");
+    END;
+
+    LOCAL PROCEDURE GetLastTransactionDateString@5091743() : Text;
+    VAR
+      dt@5091706 : DateTime;
+      year@5091705 : Integer;
+      month@5091704 : Integer;
+      day@5091703 : Integer;
+      hour@5091702 : Integer;
+      minute@5091701 : Integer;
+      timeText@5091700 : Text;
+      result@5091707 : Text;
+      d@5091708 : Date;
+      t@5091709 : Time;
+    BEGIN
+      // Get last transaction date or use current date/time if not set
+      dt := ActindoSetup."Last Transaction Date";
+
+      IF dt = 0DT THEN
+        EXIT('');
+
+      d := DT2DATE(dt);
+      t := DT2TIME(dt);
+
+      year  := DATE2DMY(d, 3);
+      month := DATE2DMY(d, 2);
+      day   := DATE2DMY(d, 1);
+
+      // Time als Text holen: HH:MM:SS
+      timeText := FORMAT(t, 0, '<Hours,2>:<Minutes,2>:<Seconds,2>');
+
+      EVALUATE(hour,   COPYSTR(timeText, 1, 2));
+      EVALUATE(minute, COPYSTR(timeText, 4, 2));
+
+      result := FORMAT(year) + '-';
+
+      IF month < 10 THEN
+        result := result + '0';
+      result := result + FORMAT(month) + '-';
+
+      IF day < 10 THEN
+        result := result + '0';
+      result := result + FORMAT(day) + ' ';
+
+      IF hour < 10 THEN
+        result := result + '0';
+      result := result + FORMAT(hour) + ':';
+
+      IF minute < 10 THEN
+        result := result + '0';
+      result := result + FORMAT(minute);
+
+      EXIT(result);
+    END;
+
+    PROCEDURE SalesInvoiceHeaderExists@5091741(pTransBuffHeader@5091700 : Record 81164) : Boolean;
+    VAR
+      SalesInvoiceHeader@5091701 : Record 112;
+    BEGIN
+      IF pTransBuffHeader.ISEMPTY OR (pTransBuffHeader."Processed to Document No." = '') THEN
+        EXIT(FALSE);
+
+      SalesInvoiceHeader.SETRANGE("Pre-Assigned No.", pTransBuffHeader."Processed to Document No.");
+      EXIT(SalesInvoiceHeader.FINDFIRST());
+    END;
+
+    PROCEDURE FindIndiFlockCiphers@1000000024(text@1000000004 : Text[30];VAR ItemPreLastCipher@1000000005 : Record 27;VAR ItemLastCipher@1000000006 : Record 27);
+    VAR
+      myText@1000000000 : Text[30];
+      testint@1000000003 : Integer;
+      ItemNoPreLastCipher@1000000002 : Code[20];
+      ItemNoLastCipher@1000000001 : Code[20];
+    BEGIN
+      ItemNoPreLastCipher := '';
+      ItemNoLastCipher    := '';
+      CLEAR(ItemPreLastCipher);
+      CLEAR(ItemLastCipher);
+
+      // delete possible leading & trailing whitespaces
+      text := DELCHR(text, '=');
+
+      IF COPYSTR(text,STRLEN(text),1) IN ['0','1','2','3','4','5','6','7','8','9'] THEN BEGIN
+        EVALUATE(testint,COPYSTR(text,STRLEN(text),1));
+        ItemNoPreLastCipher := GetIndiFlockItemNoForCipher(testint);
+        ItemPreLastCipher.GET(ItemNoPreLastCipher);
+      END;
+
+      IF (STRLEN(text) > 1) THEN BEGIN
+        IF (COPYSTR(text,STRLEN(text)-1,1) IN ['0','1','2','3','4','5','6','7','8','9']) THEN BEGIN
+          EVALUATE(testint,COPYSTR(text,STRLEN(text)-1,1));
+          ItemNoLastCipher := GetIndiFlockItemNoForCipher(testint);
+          ItemLastCipher.GET(ItemNoLastCipher);
+        END;
+      END;
+    END;
+
+    LOCAL PROCEDURE GetIndiFlockItemNoForCipher@1000000026(cipher@1000000000 : Integer) : Code[20];
+    VAR
+      LogisticSetup@1000000001 : Record 60022;
+    BEGIN
+      LogisticSetup.GET();
+
+      CASE cipher OF
+        0 : EXIT(LogisticSetup."RÅckennummer 0");
+        1 : EXIT(LogisticSetup."RÅckennummer 1");
+        2 : EXIT(LogisticSetup."RÅckennummer 2");
+        3 : EXIT(LogisticSetup."RÅckennummer 3");
+        4 : EXIT(LogisticSetup."RÅckennummer 4");
+        5 : EXIT(LogisticSetup."RÅckennummer 5");
+        6 : EXIT(LogisticSetup."RÅckennummer 6");
+        7 : EXIT(LogisticSetup."RÅckennummer 7");
+        8 : EXIT(LogisticSetup."RÅckennummer 8");
+        9 : EXIT(LogisticSetup."RÅckennummer 9");
+      END;
+    END;
+
+    LOCAL PROCEDURE IsIndiFlock@5091759(itemName@5091700 : Text;VAR newItemFlockName@5091701 : Text) : Boolean;
+    BEGIN
+      IF STRPOS(itemName, 'INDIFLOCK:') <> 0 THEN BEGIN
+        newItemFlockName := DELSTR(itemName, 1, 10);
+        EXIT(TRUE);
+      END;
+
+      EXIT(FALSE);
+    END;
+
+    LOCAL PROCEDURE HasNegativeAmounts@5091748(pSaldo@5091700 : Text) : Boolean;
+    VAR
+      SaldoAmount@5091701 : Decimal;
+    BEGIN
+      EVALUATE(SaldoAmount,CONVERTSTR(pSaldo,'.',','));
+      EXIT(SaldoAmount < 0);
+    END;
+
+    BEGIN
+    {
+      # # # Actindo Middleware Integration (S04 FC Schalke 04 Individuell) # # #
+
+      ## öbersicht
+      Dieses Objekt dient der Integration von NAV 2016 mit der Actindo-Middleware. Ereignisse erzeugen SynchronisationsdatensÑtze fÅr Kunden, Produkte, Preise, LagerbestÑnde sowie POS-Transaktionen,
+      schreiben sie in den S04 Actindo Synch. Buffer und senden die erzeugten JSON-Payloads Åber Webservices an Actindo. Die Architektur ist modular aufgebaut und trennt klar zwischen Pufferverwaltung,
+      JSON-Erstellung und Webservice-Kommunikation.
+
+      ---------------------
+      ## Hauptbestandteile
+      ---------------------
+      ### 1. **Batch-/Job-Trigger**
+      - **CreateProductBufferEntriesBatch(limiter) / CreateCustomerBufferEntriesBatch(limiter)**
+        - Initialisieren den Buffer mit freigegebenen Artikeln bzw. Personen-Kunden (Initial Load, limitierbar).
+      - **ProcessSynchBufferEntries()**
+        - JobQueue-Schritt (CU66088), der alle offenen Buffer-EintrÑge an `HandleSingleActindoBufferEntry()` Åbergibt.
+      - **ProcessTransactionsEntries()**
+        - JobQueue-Schritt fÅr POS-Transaktionen; ruft `ProcessSingleTransactionEntry()` auf.
+
+      ### 2. **Middleware Trigger**
+      - **SendToMiddleware(payload, endpoint)**
+        - Holt WebServiceSetup/WebserviceEndpoint (Code 'ACTINDO'), ruft `ActindoCore.SendRequest()` auf und gibt die Response zurÅck.
+
+      ### 3. **Pufferfunktionen**
+      - **HandleSingleActindoBufferEntry(VAR ActindoSynchBuffer)**
+        - LÑdt Request aus dem BLOB, markiert den Eintrag als In Progress, ruft endpoint-spezifische Try*-Methoden auf, protokolliert Laufzeit und schreibt Status/Response zurÅck.
+      - **TransferToSynchBuffer(pEntityType, pEntityId)**
+        - Frontdoor fÅr customer/product/transactions/inventory/price/full; prÅft Setup-Flags und delegiert an `CreateActindoSynchBufferEntry()`.
+      - **CreateActindoSynchBufferEntry(request, referenceNo, endpoint)**
+        - Legt einen neuen offenen Buffer-Eintrag an (falls keiner existiert) und speichert das JSON im Request-BLOB.
+      - **CheckActindoSetup()**
+        - Gemeinsamer Vorab-Check, ob alle relevanten ActindoSetup-Felder gepflegt sind.
+
+      ------------------------
+      ### 4. **API-Methoden (TryFunctions)**
+      ------------------------
+      - **TryCreateActindoProduct() / TrySaveActindoProduct()**
+        - Erstellen/aktualisieren Standard-Produktpayload (`CreateProductJsonObject`), senden es und speichern Actindo-IDs im Artikel.
+      - **TryCreateFullActindoProduct()**
+        - Baut Full-Produkt (inkl. Varianten und Inventories) und sendet an `FULL_PRODUCT`.
+      - **TryCreateActindoCustomer() / TrySaveActindoCustomer()**
+        - Erzeugen Kunden-Payload, senden sie und schreiben Actindo Customer/Address IDs zurÅck in den erweiterten Kunden.
+      - **TrySaveActindoInventory() / TrySaveActindoPrice()**
+        - Nutzen `CreateInventoryJsonObject()` bzw. `CreatePriceJsonObject()` fÅr Teilupdates; behandeln RÅckgabewerte wie `no_actindo_id` oder `no_stock`.
+      - **TryGetTransactions()**
+        - Holt neue POS-Transaktionen (`CreateTransactionJsonObject`), Åbergibt Responses an `CreateTransactionsFromResponse()` und aktualisiert `Last Transaction Date`.
+
+      --------------------------
+      ### 5. **JSON-Erstellung**
+      --------------------------
+      - **CreateProductJsonObject() / CreateFullProductJsonObject()**
+        - Erstellen Standard- bzw. Full-Product-Payloads inkl. Attributsatz, Variant Status, öbersetzungen, Preisen, Varianten.
+      - **CreateCustomerJsonObject()**
+        - Erstellt Customer + PrimaryAddress; fÅgt bei Saves die Actindo-ID hinzu.
+      - **CreateInventoryJsonObject() / CreatePriceJsonObject()**
+        - Erzeugen Teil-Payloads fÅr Lager bzw. Preise; liefern Status-Texte (`no_stock`, `item_not_found` ¥).
+      - **CreateTransactionJsonObject()**
+        - EnthÑlt lediglich den Datumsfilter (`GetLastTransactionDateString()`).
+      - **BuildPriceObject()**
+        - Gemeinsamer Helper fÅr `_pim_price`, `_pim_price_employee`, `_pim_price_member`.
+
+      -------------------------------
+      ### 6. **Transaktionshandling**
+      -------------------------------
+      - Transaktionen (z.B. Kassenbelege) werden Åber den Endpunkt GET_TRANSACTIONS abgeholt, im Buffer verarbeitet und per **CreateTransactionsFromResponse()** in NAV-Tabellen (Header/Lines) Åbernommen.
+      - **ProcessTransactionsEntries() / ProcessSingleTransactionEntry()**
+        - Batch- bzw. Single-Verarbeitung der Transaktions-Buffer; ruft `TryCreateSalesOrderFromBuffer()` auf und protokolliert Status, Dauer und erzeugte Belege.
+      - **TryCreateSalesOrderFromBuffer()**
+        - PrÅft Doppelverarbeitungen, bestimmt Dokumenttyp (RB/GU), Kunden, Zahlarten, Locations, legt Sales Header/Lines an und triggert Voucher-Handling.
+      - **Gutscheinhandling**
+        - Positionen mit Item Nr. "RG" bzw. Voucher Lines werden erkannt. WÑhrend `ProcessSingleTransactionEntry()` wird `TryRedeemVoucherWithSalesHeader` aus den S04 Voucher Services aufgerufen,
+          um Gutscheine gegen den erzeugten Sales Header einzulîsen. ZusÑtzlich prÅft `TryCreateSalesOrderFromBuffer()` Åber `VoucherBufferLine`, ob weitere Gutscheinzeilen erzeugt/verbucht werden mÅssen.
+      - **ExplodePotentialBOMComponents()**
+        - FÅgt bei Flock-Artikeln mit Assembly-BOM die Komponenten als zusÑtzliche Sales Lines hinzu.
+      - **SalesInvoiceHeaderExists()**
+        - PrÅft, ob fÅr einen Buffer bereits ein Sales-Dokument existiert.
+
+      ---------------------------------------------
+      ### 7. **Payload Assignment Hilfsfunktionen**
+      ---------------------------------------------
+      - **AssignEAN()** Õ FÅgt Barcodes hinzu.
+      - **AssignCatalog()** Õ Optionales Mapping auf `_pim_catalog`.
+      - **AssignPrice()** Õ VollstÑndige Preisstruktur inkl. Bulk/Promotion, Mitarbeiter- und Member-Preis.
+      - **AssignInventory()** Õ FÅgt StandortbestÑnde je Item/Variante hinzu.
+      - **AssignVariants()** Õ Erstellt Varianten inkl. Logos/Flock, Preisen, EANs.
+      - **AssignTranslations()** Õ FÅgt DE/EN-Namen, Keywords und Meta-Daten hinzu.
+      - **AssignTimestamps()** Õ Setzt created/modified abhÑngig vom Save-Flag.
+
+      -----------------
+      ## Hilfsfunktionen (weitere)
+      -----------------
+      - **CreateProductBufferEntriesBatch() / CreateCustomerBufferEntriesBatch()** Õ siehe Batch-Trigger.
+      - **DateTime2UnixTimestamp()** Õ Wandelt NAV-DateTime in Unix-Sekunden.
+      - **EvaluateDate()** Õ Konvertiert JSON-Datum in NAV-Date.
+      - **FindLocationBasedOnTransaction()** Õ Mappt POS Location Name auf Location/Resp.-Center.
+      - **FindCustomerBasedOnTransaction()** Õ Findet Kunden anhand Actindo Customer ID.
+      - **GetItemNoFromBufferLine()** Õ Splittet `ItemNo-Variant`.
+      - **GetLastTransactionDateString()** Õ Formatiert `ActindoSetup."Last Transaction Date"` als Request-String.
+
+      -----------------
+      ## Besonderheiten
+      -----------------
+      - **Fehlerbehandlung:** TryFunctions schreiben Fehlertexte/Status in den Buffer; Batch-Verarbeitung lÑuft weiter.
+      - **KonfigurationsabhÑngigkeit:** ActindoSetup steuert Attribut- und Variantensets, Tax Classes, Payment Codes usw.
+      - **Flock-/Logo-Logik:** `AssignVariants()` und `ExplodePotentialBOMComponents()` berÅcksichtigen Schalke-spezifische Produkte.
+      - **Logging:** Buffer speichert Request/Response-BLOBs, Processing Duration und Zeitstempel.
+
+      -----------------------------------------------------------------------------
+      ## Ablauf einer DatenÅbermittlung [NAV <--> S04 ALLINONEAPI <--> ACTINDO API]
+      -----------------------------------------------------------------------------
+      1. **Eventbasierte PufferbefÅllung**: In CU80093 "S04 Actindo Events" reiht ein Eventsubscriber einen Synchronisationsdatensatz (z.B. Debitor, Artikel) in den Puffer ein.
+      2. **Verarbeitung:** `ProcessSynchBufferEntries()` wird per JobQueue getriggert (CU66088 S04 Actindo Jobs) und verarbeitet alle offenen EintrÑge,
+                           ruft die passenden API-Methoden bei Actindo auf und schreibt die Responses zurÅck.
+      3. **Kommunikation:** Die Daten werden per Webservice an Actindo Åbertragen und RÅckmeldungen verarbeitet.
+                            IDs bei Neuanlagen werden auf den jeweiligen NAV-Datensatz zurÅckgeschrieben (z.B. "Actindo POS ID" auf Artikel/Varianten).
+                            Zeitstempel werden protokolliert.
+
+      -----------
+      ## Hinweise
+      -----------
+      - Dem logischen Aufbau der Methoden bei Erweiterungen folgen (funktionale KohÑsion, lose Kopplung).
+      - Neue EntitÑten/Endpunkte lassen sich leicht ergÑnzen; Payload-Erstellung bleibt gekapselt.
+      - TODO-Kommentare markieren Erweiterungsstellen.
+
+
+      -----------------------------------------------------------------------------------------
+                              # # # # FC SCHALKE 04 INDIVIDUELL # # # #
+      -----------------------------------------------------------------------------------------
+      Datum       Version     ReferenceID   Entwickler    Bemerkung
+      -----------------------------------------------------------------------------------------
+      2025-09-08  S04.00      DEV-73        s04-frank     Object Creation
+    }
+    END.
+  }
+}
+

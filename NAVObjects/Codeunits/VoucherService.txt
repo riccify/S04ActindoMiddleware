@@ -1,0 +1,974 @@
+OBJECT Codeunit 60077 S04 Voucher Services
+{
+  OBJECT-PROPERTIES
+  {
+    Date=10.04.26;
+    Time=18:13:06;
+    Modified=Yes;
+    Version List=S04.09,ACTINDO;
+  }
+  PROPERTIES
+  {
+    OnRun=BEGIN
+          END;
+
+  }
+  CODE
+  {
+
+    PROCEDURE DeleteVoucherEntriesInEinloesung@5091702();
+    VAR
+      SPVoucherEntry@5091701 : Record 5091712;
+      SPVoucherEntry2@5091705 : Record 5091712;
+      S04Utilities@5091702 : Codeunit 60060;
+      i@5091703 : Integer;
+    BEGIN
+      // Posten "In Einlîsung", die Ñlter als 2 Tage sind
+      SPVoucherEntry.SETRANGE(Postenart, SPVoucherEntry.Postenart::"In Einlîsung");
+      SPVoucherEntry.SETFILTER(Datum, '<%1', CALCDATE('<-2D>', WORKDATE()));
+      IF NOT SPVoucherEntry.FINDSET(TRUE) THEN
+        EXIT;
+
+      S04Utilities.DefaultProgressDialogOpen('ResetVouchersInEinlîsung');
+      S04Utilities.DefaultProgressDialogAdvance('SP - Voucher Entry', SPVoucherEntry.COUNT());
+
+      REPEAT
+        // Sicherstellen, dass dieser Posten der aktuellste aller dem Gutschein zugehîrigen Posten ist
+        SPVoucherEntry2.SETRANGE(Gutscheinnummer, SPVoucherEntry.Gutscheinnummer);
+        SPVoucherEntry2.SETFILTER("Lfd. Nr.", '>%1', SPVoucherEntry."Lfd. Nr.");
+        IF SPVoucherEntry2.ISEMPTY() THEN BEGIN
+          SPVoucherEntry.DELETE();
+        END;
+
+        i += 1;
+        S04Utilities.DefaultProgressDialogUpdate(i);
+      UNTIL SPVoucherEntry.NEXT() = 0;
+    END;
+
+    PROCEDURE DeleteCreateVoucherLine@5091707(VAR RecSSL@5091701 : Record 5242925);
+    VAR
+      SSL@5091700 : Record 5242925;
+      SSL2@5091705 : Record 5242925;
+      SSH@5091702 : Record 5243105;
+      VoucherNo@5091703 : Code[20];
+      SPVoucherEntry@5091704 : Record 5091712;
+      SPVoucher@5091706 : Record 5091710;
+    BEGIN
+      // A/ 2023-02-23  S04.01  SD-32637  s04-mbe
+      //Raus springen wenn es sich selbst um eine Gutscheinzeile handelt
+      IF RecSSL.Type = RecSSL.Type::Voucher THEN
+        EXIT;
+
+      //Feststellen ob es eine Gutscheinzeile gibt
+      SSL.SETRANGE("Document No.", RecSSL."Document No.");
+      SSL.SETRANGE("Document Type", RecSSL."Document Type");
+      SSL.SETRANGE(Type, SSL.Type::Voucher);
+      IF SSL.FINDSET(TRUE, TRUE) THEN BEGIN
+        REPEAT
+          IF SSL."Voucher Code" <> '' THEN BEGIN
+            //Wenn ja, Gutscheinnummer Markieren
+            IF SPVoucher.GET(SSL."Voucher Code") THEN
+              SPVoucher.MARK(TRUE);
+
+            // Setze Gutscheinposten "In Einlîsung" auf "Abbruch Einlîsung"
+            SPVoucherEntry.SETRANGE(Postenart, SPVoucherEntry.Postenart::"In Einlîsung");
+            SPVoucherEntry.SETRANGE(Gutscheinnummer, SSL."Voucher Code");
+            IF SPVoucherEntry.FINDSET(TRUE, FALSE) THEN BEGIN
+              REPEAT
+                SPVoucherEntry.Postenart := SPVoucherEntry.Postenart::"Abbruch Einlîsung";
+
+                IF SPVoucherEntry."Shop Sales No." = '' THEN
+                  SPVoucherEntry.VALIDATE("Shop Sales No.", SSL."Document No.");
+
+                SPVoucherEntry.VALIDATE(Uhrzeit, TIME);
+                SPVoucherEntry.MODIFY(FALSE);
+              UNTIL SPVoucherEntry.NEXT = 0;
+            END;
+          END;
+
+          //und diese Zeile lîschen
+          SSL2 := SSL;
+          SSL2.DELETE(TRUE);
+        UNTIL SSL.NEXT = 0;
+
+        SPVoucher.MARKEDONLY(TRUE);
+        IF SPVoucher.FINDSET(FALSE, FALSE) THEN BEGIN
+          REPEAT
+            IF SSH.GET(RecSSL."Document No.") THEN BEGIN
+              //PrÅfen ob Gesamtbetrag schon 0∞ ergibt, dann erneut einlîsen
+              SSH.CALCFIELDS("Total Amount");
+              IF SSH."Total Amount" > 0 THEN BEGIN
+                SSH.HideMessages(TRUE);
+                SSH.ProcessInputwithVariants(SPVoucher.Nummer, SSH."Input 2", 1);
+              END;
+            END;
+          UNTIL SPVoucher.NEXT() = 0;
+        END;
+      END;
+      // E/ 2023-02-23  S04.01  SD-32637  s04-mbe
+    END;
+
+    PROCEDURE ErrorByVoucherPriceTypeLines@5091700(ShopSalesPriceTypeLine@5091700 : Record 5242842);
+    VAR
+      SSPTL@5091701 : Record 5242842;
+      errVoucherRedeemed@5091702 : TextConst 'DEU=Es kînnen keine Verkaufszeilen bearbeitet werden, wenn bereits ein Gutschein eingelîst wurde.\Bitte entfernen Sie den Gutschein aus dem Verkaufsbeleg, erfassen Sie die gewÅnschten Zeilen und erfassen Sie den Gutschein erneut.;ENU=No sales lines can be edited if a voucher has already been redeemed.\Please remove the voucher from the sales document, enter the required lines and enter the voucher again.';
+    BEGIN
+      // A/ 2023-03-07  S04.01  SD-32637  s04-mbe
+      IF (ShopSalesPriceTypeLine."Voucher Code" <> '') OR (ShopSalesPriceTypeLine."Line Amount" = 0) THEN
+        EXIT;
+
+      SSPTL.SETRANGE("Shop Sales No.", ShopSalesPriceTypeLine."Shop Sales No.");
+      SSPTL.SETFILTER("Voucher Code", '<>%1', '');
+      IF SSPTL.COUNT >= 1 THEN
+        ERROR(errVoucherRedeemed);
+      // E/ 2023-03-07  S04.01  SD-32637  s04-mbe
+    END;
+
+    PROCEDURE SetVoucherEntryToCancelledByDelete@5091701(VoucherNo@5091700 : Code[20]);
+    VAR
+      SPVE@5091701 : Record 5091712;
+    BEGIN
+      // A/ 2023-03-07  S04.01  SD-32637  s04-mbe
+      IF VoucherNo <> '' THEN BEGIN
+        SPVE.SETRANGE(Gutscheinnummer, VoucherNo);
+        SPVE.SETRANGE(Postenart, SPVE.Postenart::"In Einlîsung");
+        IF SPVE.FINDLAST THEN BEGIN
+          SPVE.VALIDATE(Postenart, SPVE.Postenart::"Abbruch Einlîsung");
+          SPVE.VALIDATE(Uhrzeit, TIME);
+          SPVE.MODIFY(TRUE);
+        END;
+      END;
+      // E/ 2023-03-07  S04.01  SD-32637  s04-mbe
+    END;
+
+    PROCEDURE CreateIndiVoucher@5091753(parSalesInvHdrNo@5091700 : Code[20]) createdCnt : Integer;
+    VAR
+      Item@5091705 : Record 27;
+      SalesReceivablesSetup@5091704 : Record 311;
+      SalesInvoiceHeader@5091702 : Record 112;
+      SalesInvoiceLine@5091701 : Record 113;
+      SPVoucher@5091707 : Record 5091710;
+      SPVoucherManagement@5091703 : Codeunit 5178256;
+      i@5091706 : Integer;
+    BEGIN
+      // S / 2023-08-25 / S04.02 / SD-37336 / s04-jhc /
+      IF parSalesInvHdrNo = '' THEN
+        EXIT(0);
+
+      SalesReceivablesSetup.GET();
+      IF SalesReceivablesSetup."Digital Content Indi-Voucher" = '' THEN
+        EXIT(0);
+
+      IF SalesInvoiceHeader.GET(parSalesInvHdrNo) THEN BEGIN
+        SalesInvoiceLine.RESET();
+        SalesInvoiceLine.SETRANGE("Document No.",SalesInvoiceHeader."No.");
+        SalesInvoiceLine.SETRANGE(Type,SalesInvoiceLine.Type::Item);
+        SalesInvoiceLine.SETRANGE("Digital Content Type",SalesReceivablesSetup."Digital Content Indi-Voucher");
+        IF NOT SalesInvoiceLine.FINDSET(FALSE,FALSE) THEN
+          EXIT(0);
+        REPEAT
+          Item.GET(SalesInvoiceLine."No.");
+          CLEAR(SPVoucherManagement);
+          // A / 2023-10-24  S04.04    SD-38206      s04-jsc
+          SPVoucher.SETRANGE("Zug. Geb. Belegnr.", SalesInvoiceLine."Document No.");
+          SPVoucher.SETRANGE("Zug. Geb. Zeilennr.", SalesInvoiceLine."Line No.");
+          SPVoucher.SETRANGE(Open, TRUE);
+          IF SalesInvoiceLine.Quantity > 1 THEN BEGIN
+            //i := SalesInvoiceLine.Quantity;
+            i := SalesInvoiceLine.Quantity - SPVoucher.COUNT();
+            IF i >= 1 THEN BEGIN
+              REPEAT
+                SPVoucherManagement.CreateVoucher(2,0,SalesInvoiceLine."Unit Price",0.0,0,FALSE,WORKDATE(),CALCDATE('<+3Y>,<+CY>',WORKDATE()),
+                                                SalesInvoiceHeader."Sell-to Customer No.",'',SalesReceivablesSetup."Prefix Individual Voucher",SalesReceivablesSetup."Action Code Individual Voucher",
+                                                '','',SalesInvoiceLine,Item);
+                createdCnt += 1;
+                i -= 1;
+              UNTIL i = 0;
+            END;
+          //END ELSE BEGIN
+          END ELSE IF SalesInvoiceLine.Quantity = 1 THEN BEGIN
+              IF SPVoucher.ISEMPTY() THEN BEGIN
+
+                SPVoucherManagement.CreateVoucher(2,0,SalesInvoiceLine."Unit Price",0.0,0,FALSE,WORKDATE(),CALCDATE('<+3Y>,<+CY>',WORKDATE()),
+                                                SalesInvoiceHeader."Sell-to Customer No.",'',SalesReceivablesSetup."Prefix Individual Voucher",SalesReceivablesSetup."Action Code Individual Voucher",
+                                                '','',SalesInvoiceLine,Item);
+                createdCnt += 1;
+              END;
+          // E / 2023-10-24  S04.04    SD-38206      s04-jsc
+          END;
+        UNTIL SalesInvoiceLine.NEXT() = 0;
+      END;
+
+      EXIT(createdCnt);
+      // E / 2023-08-25 / S04.02 / SD-37336 / s04-jhc /
+    END;
+
+    PROCEDURE DeleteExpiredVoucher@5091703(SPVoucher@5091700 : Record 5091710) : Boolean;
+    VAR
+      VoucherToDelete@5091701 : Record 5091710;
+    BEGIN
+      // S / 2023-09-22 / S04.03 / SD-35856 / s04-frank /
+      CASE TRUE OF
+        SPVoucher.ISEMPTY(), SPVoucher."Ending Date" >= TODAY(), NOT SPVoucher.Open:
+          EXIT(FALSE);
+      END;
+
+      VoucherToDelete := SPVoucher;
+      EXIT(VoucherToDelete.DELETE(TRUE));
+      // E / 2023-09-22 / S04.03 / SD-35856 / s04-frank /
+    END;
+
+    LOCAL PROCEDURE GetNextLineNoSL@5091912(OrderNumber@5091700 : Code[20]) : Integer;
+    VAR
+      SalesHeader@5091702 : Record 36;
+      SalesLine@5091701 : Record 37;
+      err001@5091703 : TextConst 'DEU=Keinen SalesHeader mit der Nummer %1 gefunden.';
+    BEGIN
+      // S / 2025-07-15 / S04.02 / DEV-64 / s04-jhc /
+      SalesHeader.RESET();
+      SalesHeader.SETRANGE("No.", OrderNumber);
+      IF NOT SalesHeader.FINDFIRST() THEN
+        ERROR(err001, OrderNumber);
+      // E / 2025-07-15 / S04.02 / DEV-64 / s04-jhc /
+
+      IF SalesHeader."Document Type" = SalesHeader."Document Type"::Invoice THEN
+        SalesLine.SETRANGE("Document Type", SalesLine."Document Type"::Invoice)
+      ELSE
+        SalesLine.SETRANGE("Document Type", SalesLine."Document Type"::"Credit Memo");
+      SalesLine.SETRANGE("Document No.", OrderNumber);
+
+      IF SalesLine.FINDLAST() THEN
+        EXIT(SalesLine."Line No." + 10000)
+      ELSE
+        EXIT(10000);
+    END;
+
+    LOCAL PROCEDURE "+++ Generic WS Functions +++"@5091704();
+    BEGIN
+    END;
+
+    PROCEDURE ChargeGiftCard@5091705(request@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";VAR response@5091700 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject");
+    VAR
+      SPVoucherEntry@5091709 : Record 5091712;
+      VoucherEntry@5091708 : Record 5091712;
+      Voucher@5091706 : Record 5091710;
+      Voucher2@5091720 : Record 5091710;
+      VoucherEntry2@5091705 : Record 5091712;
+      SPCreateVoucher@5091715 : Report 5091306;
+      amount_val@5091712 : Text;
+      amount@5091711 : Decimal;
+      EntryNo@5091707 : Integer;
+      SPVoucherManagement@5091717 : Codeunit 5178256;
+      SPSynchExportSuppress@5091702 : Codeunit 5091639;
+      errorObj@5091713 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      prop@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      TransactionIdObj@5091716 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      balanceObj@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      externalReference@5091710 : Text;
+      VoucherRequestNo@5091714 : Text;
+      RequestId@5091718 : Text;
+      EndingDate@5091719 : Date;
+    BEGIN
+      //S / 2025-08-26 / S04.05 / DEV-70 / s04-jra /
+
+      // CASES:
+      // 1) Verkauf von Gutscheinkarten, hei·t, hier muss der bereits bekannte Gutscheincode aktiviert werden (open = true)!!!
+      // 2) Ausgabe eines Restgutscheines bei Retoure, hei·t, hier muss ein komplett neuer Gutscheincode angelegt aktiviert werden!!!
+
+      externalReference := FORMAT(request.GetValue('external_reference'));
+      amount_val        := FORMAT(request.SelectToken('value.amount'));
+      VoucherRequestNo  := FORMAT(request.GetValue('card_number'));
+      RequestId         := FORMAT(request.GetValue('request_id'));
+
+      EVALUATE(amount, amount_val);
+
+      // check if the current voucher code is known (CASE 1)
+      IF Voucher.GET(VoucherRequestNo) THEN BEGIN
+        // Gutscheinkarte aktivieren
+        response.Add(prop.JProperty('request_id', RequestId));
+        response.Add(prop.JProperty('card_number', FORMAT(Voucher.Nummer)));
+
+        // check if amount fits
+        IF amount <> Voucher.Amount THEN BEGIN
+          errorObj := errorObj.JObject();
+          errorObj.Add(prop.JProperty('code', '2'));
+          errorObj.Add(prop.JProperty('message', GetVoucherErrorMessage(2)));
+
+          response.Add(prop.JProperty('error', errorObj));
+          EXIT;
+        END;
+
+        // create new voucher entry if not exists
+        VoucherEntry.RESET();
+        VoucherEntry.SETRANGE(Postenart,VoucherEntry.Postenart::Ausstellung);
+        VoucherEntry.SETRANGE(Gutscheinnummer, Voucher.Nummer);
+        IF NOT VoucherEntry.FINDFIRST() THEN BEGIN
+          VoucherEntry.LOCKTABLE();
+          IF VoucherEntry.FINDLAST() THEN
+            EntryNo := VoucherEntry."Lfd. Nr." + 10
+          ELSE
+            EntryNo := 10;
+
+          VoucherEntry2.INIT();
+          VoucherEntry2."Lfd. Nr."           := EntryNo;
+          VoucherEntry2.Postenart            := VoucherEntry.Postenart::Ausstellung;
+          VoucherEntry2.Gutscheinnummer      := Voucher.Nummer;
+          VoucherEntry2.Betrag               := amount;
+          VoucherEntry2."Zug. Belegart"      := VoucherEntry2."Zug. Belegart"::Rechnung;
+          VoucherEntry2."Zug. Belegnr."      := externalReference;
+          VoucherEntry2.Datum                := TODAY();
+          VoucherEntry2.Uhrzeit              := TIME();
+          VoucherEntry2."Mitarbeiter-ID"     := USERID();
+          VoucherEntry2.INSERT();
+          // set transaction id for response
+          TransactionIdObj := TransactionIdObj.JObject();
+          TransactionIdObj.Add(prop.JProperty('id', EntryNo));
+
+          response.Add(prop.JProperty('transaction', TransactionIdObj));
+        END ELSE BEGIN
+          // set transaction id for response
+          TransactionIdObj := TransactionIdObj.JObject();
+          TransactionIdObj.Add(prop.JProperty('id', FORMAT(VoucherEntry."Lfd. Nr.")));
+
+          response.Add(prop.JProperty('transaction', TransactionIdObj));
+        END;
+
+        // set voucher to open
+        Voucher.VALIDATE(Open, TRUE);
+        EndingDate := CALCDATE('<+CM+3Y>', WORKDATE());
+        Voucher.VALIDATE("Ending Date", EndingDate);
+        SELECTLATESTVERSION();
+        Voucher.MODIFY(TRUE);
+
+        response.Add(prop.JProperty('status', GetVoucherStatusCode(Voucher)));
+
+        // balance object
+        balanceObj := balanceObj.JObject();
+        balanceObj.Add(prop.JProperty('currency_code', 'EUR'));
+        balanceObj.Add(prop.JProperty('amount', Voucher."Outstanding Amount"));
+        response.Add(prop.JProperty('balance', balanceObj));
+        EXIT;
+      END ELSE BEGIN
+        // CASE 2, wir legen einen neuen Restgutschein an ;)
+
+        CLEAR(SPCreateVoucher);
+        EndingDate := CALCDATE('<+CM+3Y>', WORKDATE());
+        SPCreateVoucher.SetRestVoucherParameters(VoucherRequestNo, amount, WORKDATE(), EndingDate);
+
+        //SPCreateVoucher.USEREQUESTPAGE(FALSE);
+        SPCreateVoucher.RUN();
+        VoucherEntry.RESET();
+        VoucherEntry.SETRANGE(Postenart,VoucherEntry.Postenart::Ausstellung);
+        VoucherEntry.SETRANGE(Gutscheinnummer, VoucherRequestNo);
+        IF VoucherEntry.FINDFIRST() THEN BEGIN
+          Voucher.RESET;
+          IF Voucher.GET(VoucherRequestNo) THEN BEGIN
+            // set transaction id for response
+            TransactionIdObj := TransactionIdObj.JObject();
+            TransactionIdObj.Add(prop.JProperty('id', FORMAT(VoucherEntry."Lfd. Nr.")));
+
+            response.Add(prop.JProperty('transaction', TransactionIdObj));
+            response.Add(prop.JProperty('request_id', RequestId));
+            response.Add(prop.JProperty('expiration_date', FORMAT(EndingDate)));
+
+            // balance object
+            balanceObj := balanceObj.JObject();
+            balanceObj.Add(prop.JProperty('currency_code', 'EUR'));
+            balanceObj.Add(prop.JProperty('amount', amount));
+            response.Add(prop.JProperty('balance', balanceObj));
+            response.Add(prop.JProperty('status', GetVoucherStatusCode(Voucher)));
+            response.Add(prop.JProperty('card_number', VoucherRequestNo));
+
+            // set document Id on Voucher
+            Voucher."Zug. Belegart" := Voucher."Zug. Belegart"::Rechnung;
+            Voucher."Zug. Belegnr." := externalReference;
+            Voucher.MODIFY(TRUE);
+
+            EXIT;
+          END;
+        END;
+
+        errorObj := errorObj.JObject();
+        errorObj.Add(prop.JProperty('code', '4'));
+        errorObj.Add(prop.JProperty('message', GetVoucherErrorMessage(4)));
+
+        response.Add(prop.JProperty('error', errorObj));
+        EXIT;
+      END;
+      //E / 2025-08-26 / S04.05 / DEV-70 / s04-jra /
+    END;
+
+    PROCEDURE CheckGiftCard@5091706(request@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";VAR response@5091700 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject");
+    VAR
+      errorObj@5091702 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      balanceObj@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      cardNumber@5091704 : Code[20];
+      voucherTable@5091705 : Record 5091710;
+      prop@5091706 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+    BEGIN
+      // S / 2025-08-26 / S04.05 / DEV-70 / s04-jra /
+      cardNumber := FORMAT(request.GetValue('card_number'));
+
+      // check if voucher exists
+      IF NOT voucherTable.GET(cardNumber) THEN BEGIN
+        errorObj := errorObj.JObject();
+        errorObj.Add(prop.JProperty('code', '1'));
+        errorObj.Add(prop.JProperty('message', 'Invalid Card Number'));
+
+        response.Add(prop.JProperty('error', errorObj));
+        EXIT;
+      END;
+
+      //Auskommentiert, weil Actindo gerne Balance 0 zurÅck haben mîchte und keinen Fehler.
+      {
+      IF (voucherTable."Outstanding Amount" <= 0) THEN BEGIN
+        errorObj := errorObj.JObject();
+        errorObj.Add(prop.JProperty('code', GetVoucherErrorCode(voucherTable, 0)));
+        errorObj.Add(prop.JProperty('message', GetVoucherErrorMessage(GetVoucherErrorCode(voucherTable, 0))));
+
+        response.Add(prop.JProperty('card_number', cardNumber));
+        response.Add(prop.JProperty('error', errorObj));
+        EXIT;
+      END;
+      }
+
+      // balance object
+      balanceObj := balanceObj.JObject();
+      balanceObj.Add(prop.JProperty('currency_code', 'EUR'));
+      balanceObj.Add(prop.JProperty('amount', voucherTable."Outstanding Amount"));
+
+      // response
+      response.Add(prop.JProperty('card_number', cardNumber));
+
+      // decide which status
+      response.Add(prop.JProperty('status', GetVoucherStatusCode(voucherTable)));
+      response.Add(prop.JProperty('balance', balanceObj));
+      response.Add(prop.JProperty('expiration_date', voucherTable."Ending Date"));
+      // E / 2025-08-26 / S04.05 / DEV-70 / s04-jra /
+    END;
+
+    PROCEDURE ReverseGiftCardTransaction@5091708(request@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";VAR response@5091700 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject");
+    VAR
+      transactionId@5091702 : Text;
+      SPVoucherEntry@5091703 : Record 5091712;
+      VoucherEntry@5091704 : Record 5091712;
+      EntryNo@5091705 : Integer;
+      Voucher2@5091706 : Record 5091710;
+      VoucherEntry2@5091707 : Record 5091712;
+      prop@5091708 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      balanceObj@5091709 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      SPSynchExportSuppress@5091710 : Codeunit 5091639;
+    BEGIN
+      // S / 2025-08-26 / S04.05 / DEV-70 / s04-pgu /
+      transactionId := FORMAT(request.GetValue('transaction_id'));
+
+      IF SPVoucherEntry.GET(transactionId, COMPANYNAME()) THEN BEGIN
+
+        Voucher2.GET(SPVoucherEntry.Gutscheinnummer);
+        response.Add(prop.JProperty('card_number', FORMAT(Voucher2.Nummer)));
+
+        // check if voucher entry (STORNO) already exists
+        VoucherEntry.RESET();
+        VoucherEntry.SETRANGE(Gutscheinnummer, Voucher2.Nummer);
+        VoucherEntry.SETRANGE("Zug. Geb. Belegnr.", SPVoucherEntry."Zug. Geb. Belegnr." + '.');
+        IF VoucherEntry.FINDFIRST() THEN BEGIN
+          // Fehler werfen, weil Transaktion bereits storniert wurde
+          EXIT;
+        END;
+
+        // create new voucher entry (STORNO)
+        VoucherEntry.RESET();
+        VoucherEntry.LOCKTABLE();
+        IF VoucherEntry.FINDLAST() THEN
+          EntryNo := VoucherEntry."Lfd. Nr." + 10
+        ELSE
+          EntryNo := 10;
+
+        VoucherEntry.INIT();
+        VoucherEntry."Lfd. Nr."           := EntryNo;
+        VoucherEntry.Postenart            := VoucherEntry.Postenart::Storno;
+        VoucherEntry.Gutscheinnummer      := SPVoucherEntry.Gutscheinnummer;
+        VoucherEntry.Betrag               := SPVoucherEntry.Betrag;
+        VoucherEntry.Restbetrag           := VoucherEntry.Restbetrag + SPVoucherEntry.Betrag;
+        VoucherEntry."Zug. Belegart"      := VoucherEntry."Zug. Belegart"::Gutschrift;
+        VoucherEntry."Zug. Belegnr."      := SPVoucherEntry."Zug. Belegnr." + '.';
+        VoucherEntry.Datum                := TODAY();
+        VoucherEntry.Uhrzeit              := TIME();
+        VoucherEntry."Mitarbeiter-ID"     := USERID();
+        VoucherEntry.INSERT();
+
+        // update outstanding amount on voucher record
+        Voucher2.VALIDATE("Outstanding Amount", SPVoucherEntry.Betrag + Voucher2."Outstanding Amount");
+        IF Voucher2."Outstanding Amount" > 0 THEN
+          IF NOT Voucher2.Open THEN
+            Voucher2.VALIDATE(Open, TRUE);
+
+        Voucher2.MODIFY(TRUE);
+
+        // Suppress creation of POS-Synch entries and modify
+        {
+        CLEAR(SPSynchExportSuppress);
+        SPSynchExportSuppress.SetSynchLogSuppressExportDuringImport('KASSE GEVIS', Voucher2.RECORDID());
+        Voucher2.MODIFY(TRUE);
+        SPSynchExportSuppress.ClearSynchLogSuppressExportDuringImport();
+        }
+
+        response.Add(prop.JProperty('status', GetVoucherStatusCode(Voucher2)));
+
+        // balance objekt
+        balanceObj := balanceObj.JObject();
+        balanceObj.Add(prop.JProperty('currency_code', 'EUR'));
+        balanceObj.Add(prop.JProperty('amount', Voucher2."Outstanding Amount"));
+        response.Add(prop.JProperty('balance', balanceObj));
+
+        // update outstanding amount on first voucher entry
+        VoucherEntry2.RESET();
+        VoucherEntry2.SETCURRENTKEY(Postenart, Gutscheinnummer);
+        VoucherEntry2.SETRANGE(Postenart, VoucherEntry2.Postenart::Ausstellung);
+        VoucherEntry2.SETRANGE(Gutscheinnummer, SPVoucherEntry.Gutscheinnummer);
+        IF VoucherEntry2.FINDFIRST() THEN BEGIN
+          VoucherEntry2.Restbetrag := Voucher2."Outstanding Amount";
+          VoucherEntry2.MODIFY(TRUE);
+        END;
+      END;
+      // E / 2025-08-26 / S04.05 / DEV-70 / s04-pgu /
+    END;
+
+    PROCEDURE PayUsingGiftCard@5091709(request@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";VAR response@5091700 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject");
+    VAR
+      SPVoucher@5091704 : Record 5091710;
+      prop@5091702 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      balanceObj@5091706 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      transactionObj@5091707 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      VoucherNo@5091705 : Code[20];
+      requestId@5091708 : Text;
+      transactionAmount@5091709 : Text;
+      transactionAmountDec@5091703 : Decimal;
+      externalReferenceId@5091710 : Text;
+      errorObj@5091711 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      transactionId@5091712 : Text;
+      isVivenuTransaction@5091713 : Boolean;
+      S04FinAccServices@5091714 : Codeunit 5091806;
+      CustomerNo@5091715 : Text;
+    BEGIN
+      // S / 2025-08-28 / S04.05 / DEV-70 / s04-frank /
+      // get params from request
+
+      VoucherNo           := FORMAT(request.GetValue('card_number'));
+      requestId           := FORMAT(request.GetValue('request_id'));
+
+      // S / 2026-02-11 / S04.07 /  SD-54052 / s04-pgu
+      CustomerNo := FORMAT(request.GetValue('navcustomernumber'));
+      // recognize Vivenu Requests
+      IF requestId = 'vivenu-voucher-payment' THEN
+        isVivenuTransaction := TRUE;
+      // E / 2026-02-11 / S04.07 /  SD-54052 / s04-pgu
+
+      externalReferenceId := FORMAT(request.GetValue('external_reference'));
+      transactionAmount   := FORMAT(request.SelectToken('value.amount'));
+
+      EVALUATE(transactionAmountDec, transactionAmount);
+
+      response.Add(prop.JProperty('card_number', VoucherNo));
+      response.Add(prop.JProperty('request_id', requestId));
+
+      // check for valid voucher
+      IF NOT SPVoucher.GET(VoucherNo) THEN BEGIN
+        errorObj := errorObj.JObject();
+        errorObj.Add(prop.JProperty('code', '1'));
+        errorObj.Add(prop.JProperty('message', 'Invalid Card Number'));
+
+        response.Add(prop.JProperty('error', errorObj));
+        EXIT;
+      END;
+
+      IF (SPVoucher."Outstanding Amount" <= 0) OR (SPVoucher."Outstanding Amount" < transactionAmountDec) THEN BEGIN
+        errorObj := errorObj.JObject();
+        errorObj.Add(prop.JProperty('code', GetVoucherErrorCode(SPVoucher, transactionAmountDec)));
+        errorObj.Add(prop.JProperty('message', GetVoucherErrorMessage(GetVoucherErrorCode(SPVoucher, transactionAmountDec))));
+
+        response.Add(prop.JProperty('error', errorObj));
+
+        EXIT; // mit Error Response beenden
+      END;
+
+      // post transaction to voucher
+      IF PostVoucherByRequest({ref}SPVoucher, externalReferenceId, transactionAmountDec, {ref}transactionId) THEN BEGIN
+        IF UpdateOutstandingAmount(SPVoucher) THEN BEGIN
+          SELECTLATESTVERSION();
+          response.Add(prop.JProperty('status', GetVoucherStatusCode(SPVoucher)));
+
+          // set current balance
+          balanceObj := balanceObj.JObject();
+          balanceObj.Add(prop.JProperty('currency_code', 'EUR'));
+          balanceObj.Add(prop.JProperty('amount', SPVoucher."Outstanding Amount"));
+
+          transactionObj := transactionObj.JObject();
+          transactionObj.Add(prop.JProperty('id', transactionId));
+
+          response.Add(prop.JProperty('transaction', transactionObj));
+        END;
+      END;
+
+      // S / 2026-02-11 / S04.07 /  SD-54052 / s04-pgu
+      // fill General Journal Batch for Vivenu-Voucher-Payments
+      // Auskommentiert / Warten auf GWS Fix
+      // IF isVivenuTransaction THEN BEGIN
+      //  IF NOT S04FinAccServices.CreateGenJnlLineFromTransaction(VoucherNo, externalReferenceId, transactionAmount, CustomerNo) THEN BEGIN
+      //    errorObj := errorObj.JObject();
+      //    errorObj.Add(prop.JProperty('code', '4'));
+      //    errorObj.Add(prop.JProperty('message', 'Voucher redemption failed.'));
+      //
+      //    response.Add(prop.JProperty('error', errorObj));
+      //
+      //    EXIT;
+      //  END;
+      //END;
+      // E / 2026-02-11 / S04.07 /  SD-54052 / s04-pgu
+      // E / 2025-08-28 / S04.05 / DEV-70 / s04-frank /
+    END;
+
+    LOCAL PROCEDURE GetVoucherStatusCode@5091712(pVoucher@5091700 : Record 5091710) : Text;
+    VAR
+      VoucherStatus@5091701 : Text;
+    BEGIN
+      //S / 2025-08-26 / S04.05 / DEV-70 / s04-frank /
+      IF pVoucher.ISEMPTY() THEN
+        EXIT;
+
+      CASE TRUE OF
+        (pVoucher."Outstanding Amount" > 0) AND (pVoucher.Open)   : VoucherStatus := 'ACTIVE';
+        (pVoucher."Outstanding Amount" = 0) OR (NOT pVoucher.Open): VoucherStatus := 'INACTIVE';
+        pVoucher.Blocked                                          : VoucherStatus := 'BLOCKED';
+        (pVoucher."Ending Date" < TODAY())                        : VoucherStatus := 'EXPIRED';
+      ELSE
+        VoucherStatus := '';
+      END;
+
+      EXIT(VoucherStatus);
+      //E / 2025-08-26 / S04.05 / DEV-70 / s04-frank /
+    END;
+
+    LOCAL PROCEDURE GetVoucherErrorCode@5091710(pSPVoucher@5091700 : Record 5091710;pAmount@5091702 : Decimal) : Integer;
+    VAR
+      ErrorCode@5091701 : Integer;
+    BEGIN
+      // S / 2025-08-26 / S04.05 / DEV-70 / s04-frank /
+      IF pSPVoucher.ISEMPTY() THEN
+        EXIT;
+
+      CASE TRUE OF
+        (pSPVoucher."Outstanding Amount" <= 0)      : EXIT(2);
+        (pSPVoucher."Outstanding Amount" < pAmount) : EXIT(3);
+      END;
+      // E / 2025-08-26 / S04.05 / DEV-70 / s04-frank /
+    END;
+
+    LOCAL PROCEDURE GetVoucherErrorMessage@5091715(pInt@5091700 : Integer) : Text;
+    BEGIN
+      // S / 2025-08-26 / S04.05 / DEV-70 / s04-frank /
+      CASE pInt OF
+        1 : EXIT('Invalid Card Number');
+        2 : EXIT('Invalid Amount');
+        3 : EXIT('Not enough Balance');
+        4 : EXIT('Voucher has not been charged');
+        5 : EXIT('Voucher has not been redeemed');
+      END;
+      // E / 2025-08-26 / S04.05 / DEV-70 / s04-frank /
+    END;
+
+    PROCEDURE PostVoucherByRequest@5091711(VAR pVoucher@5091700 : Record 5091710;pExternalReferenceId@5091710 : Text;pAmount@5091711 : Decimal;VAR pTransactionId@5091712 : Text) : Boolean;
+    VAR
+      EntryNo@5091701 : Integer;
+      SP015@5091706 : TextConst 'DEU=Die Belegnr. muss angegeben werden;ENU=The document no. must be used.';
+      SP016@5091705 : TextConst 'DEU=Ein Betrag fehlt.;ENU=There is no amount.';
+      SP017@5091704 : TextConst 'DEU=Gutschein %1 ist nicht aktiv.;ENU=Voucher %1 is not active.';
+      Voucher2@5091708 : Record 5091710;
+      VoucherEntry@5091707 : Record 5091712;
+      VoucherEntry2@5091709 : Record 5091712;
+    BEGIN
+      // S / 2025-08-28 / S04.05 / DEV-70 / s04-frank /
+      IF pExternalReferenceId = '' THEN
+        ERROR(SP015);
+
+      IF pAmount = 0 THEN
+        ERROR(SP016);
+
+      IF NOT pVoucher.Durable THEN
+        pVoucher."Outstanding Amount" := pVoucher."Outstanding Amount" - pAmount;
+
+      IF (pVoucher."Voucher Type" IN [pVoucher."Voucher Type"::Amount, pVoucher."Voucher Type"::Baustein, pVoucher."Voucher Type"::"Discount (Amount)"]) AND (NOT pVoucher.Durable) THEN BEGIN
+        // create voucher entry
+        VoucherEntry.RESET();
+        VoucherEntry.LOCKTABLE();
+        IF VoucherEntry.FINDLAST() THEN
+          EntryNo := VoucherEntry."Lfd. Nr." + 10
+        ELSE
+          EntryNo := 10;
+
+        Voucher2.GET(pVoucher.Nummer);
+
+        VoucherEntry.INIT();
+        VoucherEntry."Lfd. Nr."           := EntryNo;
+        VoucherEntry.Postenart            := VoucherEntry.Postenart::Einlîsung;
+        VoucherEntry.Gutscheinnummer      := pVoucher.Nummer;
+        VoucherEntry.Betrag               := pAmount;
+        VoucherEntry.Restbetrag           := pVoucher."Outstanding Amount";
+        VoucherEntry."Zug. Belegart"      := VoucherEntry."Zug. Belegart"::Rechnung;
+        VoucherEntry."Zug. Belegnr."      := pExternalReferenceId;
+        VoucherEntry.Datum                := TODAY();
+        VoucherEntry.Uhrzeit              := TIME();
+        VoucherEntry."Mitarbeiter-ID"     := USERID();
+        VoucherEntry.INSERT();
+
+        VoucherEntry2.RESET();
+        VoucherEntry2.SETCURRENTKEY(Postenart, Gutscheinnummer);
+        VoucherEntry2.SETRANGE(Postenart, VoucherEntry2.Postenart::Ausstellung);
+        VoucherEntry2.SETRANGE(Gutscheinnummer, pVoucher.Nummer);
+        IF VoucherEntry2.FINDFIRST() THEN BEGIN
+          VoucherEntry2.Restbetrag := pVoucher."Outstanding Amount";
+          VoucherEntry2.MODIFY();
+        END;
+      END;
+
+      IF (NOT pVoucher.Durable) THEN BEGIN
+        IF (pVoucher."Voucher Type" <> pVoucher."Voucher Type"::Amount) OR (pVoucher."Outstanding Amount" = 0) THEN BEGIN
+          pVoucher.VALIDATE(Open, FALSE);
+          pVoucher.Invoiced                 := TRUE;
+          pVoucher."Invoiced by"            := USERID();
+          pVoucher."Invoiced at"            := TODAY();
+          pVoucher."Invoiced with Document" := pExternalReferenceId;
+          pVoucher."Used Date"              := TODAY();
+        END;
+      END;
+
+      IF pVoucher."Outstanding Amount" > 0 THEN BEGIN
+        pVoucher.Open := TRUE;
+      END ELSE BEGIN
+        pVoucher.Open := FALSE;
+      END;
+
+      pVoucher.MODIFY(TRUE);
+
+      // set transaction id for response
+      pTransactionId := FORMAT(VoucherEntry."Lfd. Nr.");
+
+      EXIT(TRUE);
+      // E / 2025-08-26 / S04.05 / DEV-70 / s04-frank /
+    END;
+
+    LOCAL PROCEDURE UpdateOutstandingAmount@5091714(VAR pVoucher@5091700 : Record 5091710) : Boolean;
+    VAR
+      VoucherRef@5091701 : RecordRef;
+      FieldNo@5091702 : Integer;
+      FieldRef@5091703 : FieldRef;
+      SPVoucher@5091704 : Record 5091710;
+      SPSynchExportSuppress@5091705 : Codeunit 5091639;
+      tfrdbg@5091706 : Codeunit 5091801;
+      Voucher2@5091707 : Record 5091710;
+    BEGIN
+      // S / 2025-08-28 / S04.05 / DEV-70 / s04-frank /
+      VoucherRef.OPEN(DATABASE::"SP - Voucher");
+      VoucherRef.GET(pVoucher.RECORDID());
+      FieldNo        := pVoucher.FIELDNO(pVoucher."Outstanding Amount");
+      FieldRef       := VoucherRef.FIELD(FieldNo);
+      FieldRef.VALUE := pVoucher."Outstanding Amount";
+      VoucherRef.MODIFY(FALSE);
+
+      EXIT(TRUE);
+
+      // Suppress creation of POS-Synch entries
+      {
+      CLEAR(SPSynchExportSuppress);
+      SPSynchExportSuppress.SetSynchLogSuppressExportDuringImport('KASSE GEVIS', pVoucher.RECORDID());
+
+      VoucherRef.MODIFY(FALSE);
+
+      SPSynchExportSuppress.ClearSynchLogSuppressExportDuringImport();
+
+      EXIT(TRUE);
+      }
+      // E / 2025-08-28 / S04.05 / DEV-70 / s04-frank /
+    END;
+
+    [TryFunction]
+    PROCEDURE TryRedeemVoucherWithSalesHeader@5091761(pSalesHeaderNo@5091705 : Code[20];pVoucherCode@5091706 : Code[20]);
+    VAR
+      SalesHeader@5091700 : Record 36;
+      SalesLine@5091702 : Record 37;
+      SPVoucher@5091709 : Record 5091710;
+      SPVoucherManagement@5091701 : Codeunit 5178256;
+      SPSalesVoucher@5091703 : Record 5091711;
+      err_notFound@5091708 : TextConst 'DEU=%1 %2 konnte nicht gefunden werden.';
+      err_amount@5091710 : TextConst 'DEU=Einlîsungsbetrag darf nicht negativ oder 0 sein.';
+      err_executeFailed@5091711 : TextConst 'DEU=Einlîsungsbetrag %1 konnte nicht mit Gutschein %2  in Transaktion %3 eingelîst werden.';
+      err_alreadyRedempted@5091712 : TextConst 'DEU=Es existiert bereits ein Einlîsungsposten zu Belegnummer %1!;ENU=<Es existiert bereits ein Einlîsungsposten fÅr Gutschein %1 zu Belegnummer %2!>';
+      ReleaseSalesDocument@5091704 : Codeunit 414;
+      NewLineNo@5091713 : Integer;
+      err_noLinesFound@5091715 : TextConst 'DEU=Es existieren keine Verkaufszeilen in Beleg %1.';
+    BEGIN
+      // S / 2026-02-04 / S04.06 / SD-53897 / s04-frank /
+      // check if sales header exists
+      SalesHeader.RESET();
+      SalesHeader.SETRANGE("No.", pSalesHeaderNo);
+      IF NOT SalesHeader.FINDFIRST() THEN
+        ERROR(err_notFound, SalesHeader.TABLECAPTION(), pSalesHeaderNo);
+
+      SalesHeader.TESTFIELD(Status, SalesHeader.Status::Released);
+
+      // check if sales header has lines
+      SalesLine.RESET();
+      SalesLine.SETRANGE("Document Type", SalesHeader."Document Type");
+      SalesLine.SETRANGE("Document No.", SalesHeader."No.");
+      IF NOT SalesLine.FINDSET() THEN
+        ERROR(err_noLinesFound, SalesHeader."No.");
+
+      // check if voucher exists
+      IF NOT SPVoucherManagement.TestVoucher(pVoucherCode, '') THEN
+        ERROR(err_notFound, SPVoucher.TABLECAPTION(), pVoucherCode);
+
+      SPVoucher.GET(pVoucherCode);
+
+      // perform manual reopen
+      IF SalesHeader.Status = SalesHeader.Status::Released THEN BEGIN
+        CLEAR(ReleaseSalesDocument);
+        ReleaseSalesDocument.PerformManualReopen({ref}SalesHeader);
+      END;
+
+      // check central voucher sales table for current redemption
+      // check for double redemption
+      SPSalesVoucher.RESET();
+      SPSalesVoucher.SETRANGE("Sales Document Type", SalesHeader."Document Type");
+      SPSalesVoucher.SETRANGE("Sales Document No.", SalesHeader."No.");
+      SPSalesVoucher.SETRANGE("Voucher No.", SPVoucher.Nummer);
+      SPSalesVoucher.SETRANGE(Redeemed, TRUE);
+      IF NOT SPSalesVoucher.ISEMPTY() THEN
+        ERROR(err_alreadyRedempted, SPVoucher.Nummer, SalesHeader."No.");
+
+      // fill voucher redemption fields on document
+      SalesHeader.LOCKTABLE();
+
+      IF SalesHeader."Voucher No." = '' THEN
+        SalesHeader.VALIDATE("Voucher No.", SPVoucher.Nummer)
+      ELSE
+        SalesHeader.VALIDATE("Voucher No.", 'MULTIPLE');
+
+      SalesHeader.MODIFY(TRUE);
+
+      // create new voucher sales table record
+      SPSalesVoucher.LOCKTABLE();
+      SPSalesVoucher.INIT();
+
+      // bind record to sales header
+      SPSalesVoucher."Sales Document No."  := SalesHeader."No.";
+      SPSalesVoucher."Sales Document Type" := SalesHeader."Document Type";
+      SPSalesVoucher."Line No."            += 10;
+
+      // bind record to voucher code
+      SPSalesVoucher.VALIDATE("Voucher No.", SPVoucher.Nummer);
+      SPSalesVoucher.INSERT(TRUE);
+
+      SPSalesVoucher.VALIDATE(Redeemed, TRUE);
+      SPSalesVoucher.MODIFY(TRUE);
+
+      // perform manual release
+      CLEAR(ReleaseSalesDocument);
+      ReleaseSalesDocument.PerformManualRelease({ref}SalesHeader);
+
+      {
+      IF NOT SPVoucherManagement.ExecuteMultipleVouchers({ref}SalesHeader, {ref}SalesLine, {ref}SPSalesVoucher, FALSE) THEN
+        ERROR(err_executeFailed, pVoucherAmount, SPVoucher.Nummer, FORMAT(SalesHeader."Document Type") + ': ' + SalesHeader."No.");
+      }
+      // E / 2026-02-04 / S04.06 / SD-53897 / s04-frank /
+    END;
+
+    [TryFunction]
+    PROCEDURE TryLinkVoucherToSalesHeader@5091713(pSalesHeaderNo@5091700 : Code[20];pVoucherCode@5091701 : Code[20]);
+    VAR
+      SalesHeader@5091707 : Record 36;
+      SalesLine@5091706 : Record 37;
+      SPVoucher@5091705 : Record 5091710;
+      SPVoucherManagement@5091704 : Codeunit 5178256;
+      SPSalesVoucher@5091703 : Record 5091711;
+      ReleaseSalesDocument@5091702 : Codeunit 414;
+      err_notFound@5091708 : TextConst 'ENU="DEU=%1 %2 konnte nicht gefunden werden."';
+    BEGIN
+      // S / 2026-03-29 / S04.09 / DEV-70 / 04-jra
+      SalesHeader.RESET();
+      SalesHeader.SETRANGE("No.", pSalesHeaderNo);
+      IF NOT SalesHeader.FINDFIRST() THEN
+        ERROR(err_notFound, SalesHeader.TABLECAPTION(), pSalesHeaderNo);
+
+      // check voucher
+      IF NOT SPVoucherManagement.TestVoucher(pVoucherCode, '') THEN
+        ERROR(err_notFound, SPVoucher.TABLECAPTION(), pVoucherCode);
+
+      SPVoucher.GET(pVoucherCode);
+
+      // if reference exists do nothing
+      SPSalesVoucher.RESET();
+      SPSalesVoucher.SETRANGE("Sales Document Type", SalesHeader."Document Type");
+      SPSalesVoucher.SETRANGE("Sales Document No.", SalesHeader."No.");
+      SPSalesVoucher.SETRANGE("Voucher No.", SPVoucher.Nummer);
+      IF NOT SPSalesVoucher.ISEMPTY() THEN
+        EXIT;
+
+      // open invoice
+      IF SalesHeader.Status = SalesHeader.Status::Released THEN BEGIN
+        CLEAR(ReleaseSalesDocument);
+        ReleaseSalesDocument.PerformManualReopen({ref}SalesHeader);
+      END;
+
+      // if multible voucher
+      IF SalesHeader."Voucher No." = '' THEN
+        SalesHeader.VALIDATE("Voucher No.", SPVoucher.Nummer)
+      ELSE
+        IF SalesHeader."Voucher No." <> SPVoucher.Nummer THEN
+          SalesHeader.VALIDATE("Voucher No.", 'MULTIPLE');
+
+      SalesHeader.MODIFY(TRUE);
+
+      // create new voucher sales table record
+      SPSalesVoucher.LOCKTABLE();
+      SPSalesVoucher.INIT();
+      SPSalesVoucher."Sales Document No."  := SalesHeader."No.";
+      SPSalesVoucher."Sales Document Type" := SalesHeader."Document Type";
+      SPSalesVoucher."Line No."            := 10;
+
+      SPSalesVoucher.VALIDATE("Voucher No.", SPVoucher.Nummer);
+      SPSalesVoucher.INSERT(TRUE);
+
+      // Redeemed auf TRUE setzen:
+      // Das triggert die bestehende Gutscheinlogik auf Belegebene.
+      // Die doppelte Einlousung wird dabei durch den Check in CU 5178256 auf Basis der External Document No. abgefangen.
+      SPSalesVoucher.VALIDATE(Redeemed, TRUE);
+      SPSalesVoucher.MODIFY(TRUE);
+
+      // release invoice
+      CLEAR(ReleaseSalesDocument);
+      ReleaseSalesDocument.PerformManualRelease({ref}SalesHeader);
+      // E / 2026-03-29 / S04.09 / DEV-70 / 04-jra
+    END;
+
+    BEGIN
+    {
+      -----------------------------------------------------------------------------------------
+      # # # # FC SCHALKE 04 INDIVIDUELL # # # #
+      -----------------------------------------------------------------------------------------
+      Date        Version   ReferenceID   Developer  Comment
+      -----------------------------------------------------------------------------------------
+      2019-09-06  S04.00    SD-9085       s04-fdu    created object
+      2023-02-23  S04.01    SD-32637      s04-mbe    add Function "DeleteCreateVoucherLine()", "ErrorByVoucherPriceTypeLines()" & "SetVoucherEntryToCancelledByDelete()"
+      2023-08-25  S04.02    SD-37336      s04-jhc    added function "TryIndiVoucherProcessing"
+      2023-09-22  S04.03    SD-35856      s04-frank  added function "DeleteExpiredVoucher()"
+      2023-10-24  S04.04    SD-38206      s04-jsc    bugfix in "TryIndiVoucherProcessing" and rename to "createIndiVoucher"
+      2025-08-26  S04.05    DEV-70        s04-jra    added voucher balance check
+      2026-02-04  S04.06    SD-53897      s04-frank  Zentrale Gutscheinfunktion fuer Einloesung von Gutscheinen in NAV und buchhalterische Honorierung der Gutscheine auf Belegen
+      2026-02-11  S04.07    SD-54052      s04-pgu    Fill Gen.Jnl. from Vivenu Voucher Redemption in "PayUsingGiftCard()"
+      2026-03-19  S04.08    SD-54052      s04-bso    Amount korrekt berechnen abzueglich Gutscheinen --> wieder entfernt
+      2026-03-29  S04.09    DEV-70        s04-jra    Added TryLinkVoucherToSalesHeader to avoid double redeem
+    }
+    END.
+  }
+}
+

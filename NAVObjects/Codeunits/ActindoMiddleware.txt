@@ -1,0 +1,713 @@
+OBJECT Codeunit 81122 S04 Actindo Middleware
+{
+  OBJECT-PROPERTIES
+  {
+    Date=22.04.26;
+    Time=16:58:55;
+    Modified=Yes;
+    Version List=S04.01,ACTINDO;
+  }
+  PROPERTIES
+  {
+    OnRun=BEGIN
+            ClearProductIDs();
+          END;
+
+  }
+  CODE
+  {
+
+    PROCEDURE SetProductIDs@5091700(request@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";VAR response@5091700 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject");
+    VAR
+      prop@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      ProductObject@5091702 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      ItemVariant@5091713 : Record 5401;
+      pItem@5091704 : Record 27;
+      ProductsArray@5091707 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      ProductsToken@5091706 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JToken";
+      VariantsArray@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      VariantsToken@5091709 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JToken";
+      ActindoId@5091708 : Text;
+      ItemId@5091710 : Code[20];
+      VariantActindoId@5091711 : Code[20];
+      VariantItemId@5091712 : Code[20];
+      i@5091714 : Integer;
+      ItemRef@5091717 : RecordRef;
+      FieldNo@5091716 : Integer;
+      FieldRef@5091715 : FieldRef;
+    BEGIN
+      // products Array holen
+      ProductsArray := ProductsArray.JArray();
+      ProductsArray := request.GetValue('products');
+
+
+      FOR i := 0 TO ProductsArray.Count() - 1 DO BEGIN
+          ProductObject := ProductObject.JObject();
+          ProductObject := ProductsArray.Item(i);
+
+          ActindoId := FORMAT(ProductObject.GetValue('actindo_id'));
+          ItemId := FORMAT(ProductObject.GetValue('nav_id'));
+
+          IF pItem.GET(ItemId) THEN BEGIN
+              pItem."Actindo POS ID" := ActindoId;
+              pItem.MODIFY(TRUE);
+              response.Add(prop.JProperty('master', 'Actindo ID set.'));
+          END ELSE BEGIN
+            ERROR('Can not find Product %1', ItemId);
+          END;
+
+
+
+          // Varianten vorhanden?
+          IF NOT ISNULL(ProductObject.SelectToken('variants')) THEN BEGIN
+            VariantsArray := ProductObject.SelectToken('variants');
+
+            FOREACH VariantsToken IN VariantsArray DO BEGIN
+
+
+                VariantActindoId := FORMAT(VariantsToken.SelectToken('actindo_id'));
+                VariantItemId := FORMAT(VariantsToken.SelectToken('nav_id'));
+
+                ItemVariant.RESET();
+                ItemVariant.SETRANGE("Item No.", ItemId);
+                ItemVariant.SETRANGE(Code, SplitGetPart(VariantItemId, '-', 1));
+
+                IF ItemVariant.FINDFIRST() THEN BEGIN
+
+                    ItemVariant."Actindo POS ID" := COPYSTR(VariantActindoId, 1, MAXSTRLEN(ItemVariant."Actindo POS ID"));
+                    ItemVariant."Actindo POS Last Update On" := CREATEDATETIME(TODAY(), TIME());
+
+                    ItemVariant.MODIFY(TRUE);
+
+                END;
+            END;
+
+            response.Add(prop.JProperty('variant', 'Actindo IDs in variants set.'));
+          END;
+
+      END;
+    END;
+
+    LOCAL PROCEDURE GetProduct@5091703();
+    VAR
+      S04ActindoService@5091700 : Codeunit 80092;
+    BEGIN
+    END;
+
+    PROCEDURE GetProductIDs@5091704(VAR response@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject");
+    VAR
+      Item@5091700 : Record 27;
+      ItemVariant@5091706 : Record 5401;
+      prop@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      ProductArray@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      ProductObj@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      ProductToken@5091702 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JToken";
+      VariantArray@5091709 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      VariantObj@5091708 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      VariantToken@5091707 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JToken";
+    BEGIN
+      //response: {"products": [{"nav_id": "123", "actindo_id": "321", "name": "tshirt weiss", "variants": [{"nav_id": "123-L", "actindo_id": "213", "name": "L"}]}]}
+      ProductArray := ProductArray.JArray();
+
+
+      Item.RESET;
+      Item.SETFILTER("Actindo POS ID", '<>%1', '');
+      Item.CALCFIELDS("Variant Existis");
+
+      IF Item.FINDSET THEN BEGIN
+        REPEAT
+          ProductObj := ProductObj.JObject();
+          ProductObj.Add(prop.JProperty('nav_id', Item."No."));
+          ProductObj.Add(prop.JProperty('actindo_id', Item."Actindo POS ID"));
+          ProductObj.Add(prop.JProperty('name', Item.Description + Item."Description 2"));
+
+          Item.CALCFIELDS("Variant Existis");
+          IF Item."Variant Existis" THEN BEGIN
+            ItemVariant.RESET();
+            ItemVariant.SETRANGE("Item No.", Item."No.");
+            IF ItemVariant.FINDSET() THEN BEGIN
+              VariantArray := VariantArray.JArray();
+              REPEAT
+                IF ItemVariant."Actindo POS ID" <> '' THEN BEGIN
+                  VariantObj := VariantObj.JObject();
+                  VariantObj.Add(prop.JProperty('nav_id', ItemVariant."IF Item No. Of Variant"));
+                  VariantObj.Add(prop.JProperty('actindo_id', ItemVariant."Actindo POS ID"));
+                  VariantObj.Add(prop.JProperty('name', ItemVariant.Code));
+                  VariantToken := VariantObj;
+                  VariantArray.Add(VariantToken);
+                END;
+              UNTIL ItemVariant.NEXT = 0;
+              ProductObj.Add(prop.JProperty('variants', VariantArray))
+            END;
+          END;
+
+          ProductToken := ProductObj;
+          ProductArray.Add(ProductToken);
+
+        UNTIL Item.NEXT = 0;
+      END;
+
+      response.Add(prop.JProperty('products', ProductArray));
+    END;
+
+    PROCEDURE GetProductID@5091709(request@5091710 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";VAR response@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject");
+    VAR
+      Item@5091700 : Record 27;
+      ItemVariant@5091706 : Record 5401;
+      prop@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      ProductArray@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      ProductObj@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      ProductToken@5091702 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JToken";
+      VariantArray@5091709 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      VariantObj@5091708 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      VariantToken@5091707 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JToken";
+      NavId@5091711 : Code[20];
+    BEGIN
+      //response: {"product": {"nav_id": "123", "actindo_id": "321", "name": "tshirt weiss", "variants": [{"nav_id": "123-L", "actindo_id": "213", "name": "L"}]}}
+
+      NavId := FORMAT(request.GetValue('nav_id'));
+
+      IF NavId = '' THEN
+        ERROR('Bitte Produkt ID mit angeben.');
+
+      Item.RESET;
+
+      IF Item.GET(NavId) THEN BEGIN
+
+        ProductObj := ProductObj.JObject();
+        ProductObj.Add(prop.JProperty('nav_id', Item."No."));
+        ProductObj.Add(prop.JProperty('actindo_id', Item."Actindo POS ID"));
+        ProductObj.Add(prop.JProperty('name', Item.Description + Item."Description 2"));
+
+        Item.CALCFIELDS("Variant Existis");
+        IF Item."Variant Existis" THEN BEGIN
+          ItemVariant.RESET();
+          ItemVariant.SETRANGE("Item No.", Item."No.");
+          IF ItemVariant.FINDSET() THEN BEGIN
+            VariantArray := VariantArray.JArray();
+            REPEAT
+              IF ItemVariant."Actindo POS ID" <> '' THEN BEGIN
+                VariantObj := VariantObj.JObject();
+                VariantObj.Add(prop.JProperty('nav_id', ItemVariant."IF Item No. Of Variant"));
+                VariantObj.Add(prop.JProperty('actindo_id', ItemVariant."Actindo POS ID"));
+                VariantObj.Add(prop.JProperty('name', ItemVariant.Code));
+                VariantToken := VariantObj;
+                VariantArray.Add(VariantToken);
+              END;
+            UNTIL ItemVariant.NEXT = 0;
+            ProductObj.Add(prop.JProperty('variants', VariantArray))
+          END;
+        END;
+
+        response.Add(prop.JProperty('product', ProductObj));
+
+      END ELSE BEGIN
+        ERROR('Das Produkt %1 existiert nicht in NAV.', NavId);
+      END;
+    END;
+
+    PROCEDURE DelProductID@5091712(request@5091710 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";VAR response@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject");
+    VAR
+      Item@5091700 : Record 27;
+      ItemVariant@5091706 : Record 5401;
+      prop@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      ProductArray@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      ProductObj@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      ProductToken@5091702 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JToken";
+      VariantArray@5091709 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      VariantObj@5091708 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      VariantToken@5091707 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JToken";
+      NavId@5091711 : Code[20];
+    BEGIN
+      NavId := FORMAT(request.GetValue('nav_id'));
+
+      IF NavId = '' THEN
+        ERROR('Please set an Product ID.');
+
+      Item.RESET;
+
+      IF Item.GET(NavId) THEN BEGIN
+
+        Item."Actindo POS ID" := '';
+        Item.MODIFY(TRUE);
+
+        Item.CALCFIELDS("Variant Existis");
+        IF Item."Variant Existis" THEN BEGIN
+          ItemVariant.RESET();
+          ItemVariant.SETRANGE("Item No.", Item."No.");
+          IF ItemVariant.FINDSET() THEN BEGIN
+            REPEAT
+              ItemVariant."Actindo POS ID" := '';
+              ItemVariant.MODIFY(TRUE);
+            UNTIL ItemVariant.NEXT = 0;
+          END;
+        END;
+
+        response.Add(prop.JProperty('success', TRUE));
+        response.Add(prop.JProperty('message', 'Actindo IDs with variants removed.'));
+
+      END ELSE BEGIN
+        ERROR('Product %1 does not exist in NAV.', NavId);
+      END;
+    END;
+
+    LOCAL PROCEDURE ClearProductIDs@5091773();
+    VAR
+      Item@5091700 : Record 27;
+      ItemVariant@5091701 : Record 5401;
+    BEGIN
+      IF NOT CONFIRM('Sind Sie sicher, dass Sie alle Actindo POS IDs entfernen wollen?') THEN
+        EXIT;
+
+      Item.RESET();
+      Item.SETFILTER("Actindo POS ID", '<>%1', '');
+
+      IF Item.FINDSET THEN BEGIN
+          REPEAT
+            Item."Actindo POS ID" := '';
+            Item.MODIFY(TRUE);
+          UNTIL Item.NEXT = 0;
+      END;
+
+      ItemVariant.RESET;
+      ItemVariant.SETFILTER("Actindo POS ID", '<>%1', '');
+
+      IF ItemVariant.FINDSET THEN BEGIN
+        REPEAT
+          ItemVariant."Actindo POS ID" := '';
+          ItemVariant.MODIFY(TRUE);
+        UNTIL ItemVariant.NEXT = 0;
+      END;
+
+      MESSAGE('Alle Actindo POS IDs wurden entfernt!');
+    END;
+
+    PROCEDURE GetCustomerIDs@5091701(VAR response@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject");
+    VAR
+      S04CustomerExtended@5091700 : Record 60018;
+      prop@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      CustomerArray@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      CustomerObj@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      CustomerToken@5091702 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JToken";
+    BEGIN
+      //response: {"customers": [{"nav_id": 123, "actindo_id": 321}]}
+      CustomerArray := CustomerArray.JArray();
+
+
+      S04CustomerExtended.RESET;
+      S04CustomerExtended.SETFILTER("Actindo Customer ID", '<>%1', '');
+
+      IF S04CustomerExtended.FINDSET THEN BEGIN
+        REPEAT
+          CustomerObj := CustomerObj.JObject();
+          CustomerObj.Add(prop.JProperty('nav_id', S04CustomerExtended."No."));
+          CustomerObj.Add(prop.JProperty('actindo_id', S04CustomerExtended."Actindo Customer ID"));
+
+          CustomerToken := CustomerObj;
+          CustomerArray.Add(CustomerToken);
+
+        UNTIL S04CustomerExtended.NEXT = 0;
+      END;
+
+      response.Add(prop.JProperty('customer', CustomerArray));
+    END;
+
+    PROCEDURE SetCustomerID@5091702(request@5091708 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";VAR response@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject");
+    VAR
+      S04CustomerExtended@5091700 : Record 60018;
+      Customer@5091709 : Record 18;
+      prop@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      NavId@5091706 : Code[20];
+      ActindoId@5091707 : Code[20];
+    BEGIN
+      //request: {"customer": {"nav_id": 123, "actindo_id": 321}}
+      NavId := FORMAT(request.SelectToken('customer.nav_id'));
+      ActindoId := FORMAT(request.SelectToken('customer.actindo_id'));
+
+      Customer.RESET;
+      IF NOT Customer.GET(NavId) THEN
+        ERROR('Customer %1 not found', NavId);
+
+      S04CustomerExtended.RESET;
+      IF NOT S04CustomerExtended.GET(Customer."No.") THEN BEGIN
+        S04CustomerExtended.INIT();
+        S04CustomerExtended."No." := Customer."No.";
+        S04CustomerExtended."Actindo Customer ID" := ActindoId;
+        S04CustomerExtended.INSERT(TRUE);
+      END ELSE BEGIN
+        S04CustomerExtended."Actindo Customer ID" := ActindoId;
+        S04CustomerExtended.MODIFY(TRUE);
+      END;
+
+      response.Add(prop.JProperty('message', 'Customer ' + NavId + ' hat nun die Actindo ID ' + ActindoId));
+    END;
+
+    PROCEDURE ClearCustomerActindoID@5091705();
+    VAR
+      S04CustomerExtended@5091700 : Record 60018;
+      Customer@5091701 : Record 18;
+      i@5091702 : Integer;
+      Total@5091703 : Integer;
+      Dlg@5091704 : Dialog;
+    BEGIN
+      IF NOT CONFIRM('Wollen Sie alle Actindo IDs der Kunden entfernen?', FALSE) THEN
+        EXIT;
+
+      Dlg.OPEN(
+        'Verarbeitung lÑuft...\#' +
+        'Fortschritt: #1##### %'
+      );
+
+      Total := S04CustomerExtended.COUNT;
+      i := 0;
+
+      IF S04CustomerExtended.FINDSET() THEN BEGIN
+        REPEAT
+
+          IF S04CustomerExtended."Actindo Customer ID" <> '' THEN BEGIN
+            S04CustomerExtended."Actindo Customer ID" := '';
+            S04CustomerExtended."Actindo Primary Address ID" := '';
+            S04CustomerExtended.MODIFY(TRUE);
+            i += 1;
+          END;
+
+          // Fortschritt nur gelegentlich updaten (Performance!)
+          IF (i MOD 20 = 0) OR (i = Total) THEN
+            Dlg.UPDATE(1, ROUND(i * 100 / Total, 1));
+
+        UNTIL S04CustomerExtended.NEXT() = 0;
+      END;
+
+      Dlg.CLOSE;
+
+      MESSAGE('%1 Kunden verarbeitet.', i);
+    END;
+
+    PROCEDURE ClearProductActindoID@5091706();
+    VAR
+      Item@5091700 : Record 27;
+      ItemVariant@5091701 : Record 5401;
+      iVariant@5091702 : Integer;
+      iItem@5091703 : Integer;
+      Total@5091706 : Integer;
+      i@5091704 : Integer;
+      Dlg@5091705 : Dialog;
+    BEGIN
+      IF NOT CONFIRM('Wollen Sie alle Actindo IDs der Produkte und Varianten entfernen?') THEN
+        EXIT;
+
+
+      // Gesamtanzahl fÅr sauberen Fortschritt
+      Total := Item.COUNT + ItemVariant.COUNT;
+      i := 0;
+
+      Dlg.OPEN(
+        'Verarbeitung lÑuft...\#' +
+        'Fortschritt: #2##### %'
+      );
+
+      // ---------- Produkte ----------
+      iItem := 0;
+      Item.RESET;
+      IF Item.FINDSET() THEN BEGIN
+        REPEAT
+          i += 1;
+
+          IF Item."Actindo POS ID" <> '' THEN BEGIN
+            Item."Actindo POS ID" := '';
+            Item.MODIFY(TRUE);
+            iItem += 1;
+          END;
+
+          // UI nicht zuspammen
+          IF (i MOD 25 = 0) OR (i = Total) THEN BEGIN
+            Dlg.UPDATE(2, ROUND(i * 100 / Total, 1));
+          END;
+
+        UNTIL Item.NEXT = 0;
+      END;
+
+      // ---------- Varianten ----------
+      iVariant := 0;
+      ItemVariant.RESET;
+      IF ItemVariant.FINDSET() THEN BEGIN
+        REPEAT
+          i += 1;
+
+          IF ItemVariant."Actindo POS ID" <> '' THEN BEGIN
+            ItemVariant."Actindo POS ID" := '';
+            ItemVariant.MODIFY(TRUE);
+            iVariant += 1;
+          END;
+
+          IF (i MOD 25 = 0) OR (i = Total) THEN BEGIN
+            Dlg.UPDATE(2, ROUND(i * 100 / Total, 1));
+          END;
+
+        UNTIL ItemVariant.NEXT = 0;
+      END;
+
+      Dlg.CLOSE;
+
+      MESSAGE('Es wurden erfolgreich die Actindo IDs von %1 Produkten sowie %2 Varianten entfernt!', iItem, iVariant);
+    END;
+
+    PROCEDURE ProductResponse@5091707(request@5091700 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";VAR response@5091718 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject");
+    VAR
+      payload@5091711 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      JObject@5091709 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      S04ActindoSynchBuffer@5091714 : Record 80091;
+      Item@5091708 : Record 27;
+      JArray@5091707 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      JObjectVar@5091706 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      i@5091705 : Integer;
+      sku@5091704 : Code[20];
+      id@5091703 : Code[20];
+      ItemVariant@5091702 : Record 5401;
+      S04ActindoImageHandler@5091701 : Codeunit 81000;
+      ProductId@5091712 : Code[20];
+      Success@5091713 : Text;
+      BufferId@5091715 : Code[20];
+      ItemNo@5091710 : Code[20];
+      IsCreate@5091716 : Text;
+      oStream@5091717 : OutStream;
+      prop@5091719 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      Error@5091720 : Text;
+    BEGIN
+      // save actindo product ID to Item Record
+      Success := UPPERCASE(FORMAT(request.GetValue('success')));
+      BufferId := FORMAT(request.GetValue('bufferId'));
+
+
+
+      IF S04ActindoSynchBuffer.GET(BufferId) THEN BEGIN
+        IF Success = 'TRUE' THEN BEGIN
+          ProductId := FORMAT(request.GetValue('masterProductId'));
+          ItemNo := FORMAT(request.GetValue('masterSku'));
+          IsCreate := UPPERCASE(FORMAT(request.GetValue('created')));
+
+          IF Item.GET(ItemNo) THEN BEGIN
+            Item."Actindo POS ID" := ProductId;
+            Item."Actindo Last Update On" := CREATEDATETIME(TODAY(), TIME());
+            Item.MODIFY(TRUE);
+
+            // trigger image upload
+            IF IsCreate = 'TRUE' THEN
+              S04ActindoImageHandler.SetImages(Item);
+
+            // save actindo product ID for variants if exists
+            Item.CALCFIELDS("Variant Existis");
+            IF Item."Variant Existis" THEN BEGIN
+              JArray := JArray.JArray();
+              JArray := request.GetValue('variants');
+
+              FOR i := 0 TO JArray.Count() - 1 DO BEGIN
+                JObjectVar := JObjectVar.JObject();
+                JObjectVar := JArray.Item(i);
+                sku        := FORMAT(JObjectVar.GetValue('sku'));
+                id         := FORMAT(JObjectVar.GetValue('productId'));
+
+                ItemVariant.RESET();
+                ItemVariant.SETRANGE("IF Item No. Of Variant", sku);
+                IF ItemVariant.FINDFIRST() THEN BEGIN
+                  ItemVariant."Actindo POS ID"             := COPYSTR(id, 1, MAXSTRLEN(ItemVariant."Actindo POS ID"));
+                  ItemVariant."Actindo POS Last Update On" := CREATEDATETIME(TODAY(), TIME());
+                  ItemVariant.MODIFY(TRUE);
+                END;
+              END;
+            END;
+
+            response.Add(prop.JProperty('success', 'true'));
+
+            S04ActindoSynchBuffer.VALIDATE(Status, S04ActindoSynchBuffer.Status::Processed);
+            S04ActindoSynchBuffer."Processing Timestamp" := CREATEDATETIME(TODAY(), TIME());
+            S04ActindoSynchBuffer."Response Document".CREATEOUTSTREAM(oStream, TEXTENCODING::UTF8);
+            oStream.WRITETEXT(request.ToString());
+            S04ActindoSynchBuffer.MODIFY(TRUE);
+            COMMIT();
+
+          END;
+        END ELSE BEGIN
+
+
+          S04ActindoSynchBuffer."Error Message" := DELSTR(FORMAT(request.GetValue('error')), 250);
+          S04ActindoSynchBuffer.Status := S04ActindoSynchBuffer.Status::Error;
+          S04ActindoSynchBuffer."Response Document".CREATEOUTSTREAM(oStream, TEXTENCODING::UTF8);
+          oStream.WRITETEXT(request.ToString());
+          S04ActindoSynchBuffer.MODIFY(TRUE);
+          COMMIT();
+
+        END;
+      END ELSE BEGIN
+      END;
+    END;
+
+    PROCEDURE CustomerResponse@5091711(request@5091700 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";VAR response@5091718 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject");
+    VAR
+      payload@5091711 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      JObject@5091709 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      S04ActindoSynchBuffer@5091714 : Record 80091;
+      Customer@5091708 : Record 18;
+      S04CustomerExtended@5091701 : Record 60018;
+      JArray@5091707 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      JObjectVar@5091706 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      i@5091705 : Integer;
+      id@5091703 : Code[20];
+      CustomerId@5091712 : Code[20];
+      Success@5091713 : Text;
+      BufferId@5091715 : Code[20];
+      NavCustomerId@5091710 : Code[20];
+      oStream@5091717 : OutStream;
+      prop@5091719 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      Error@5091720 : Text;
+    BEGIN
+      // save actindo product ID to Item Record
+      Success := UPPERCASE(FORMAT(request.GetValue('success')));
+      BufferId := FORMAT(request.GetValue('bufferId'));
+
+
+
+      IF S04ActindoSynchBuffer.GET(BufferId) THEN BEGIN
+        IF Success = 'TRUE' THEN BEGIN
+          CustomerId := FORMAT(request.GetValue('customerId'));
+          NavCustomerId := FORMAT(request.GetValue('NavCustomerId'));
+
+          IF Customer.GET(NavCustomerId) THEN BEGIN
+            IF NOT S04CustomerExtended.GET(Customer."No.") THEN BEGIN
+              S04CustomerExtended.INIT();
+              S04CustomerExtended."No." := Customer."No.";
+              S04CustomerExtended.INSERT(TRUE);
+            END;
+            S04CustomerExtended."Actindo Customer ID"        := CustomerId;
+            S04CustomerExtended."Actindo Primary Address ID" := CustomerId;
+            S04CustomerExtended."Actindo POS Last Update On" := CREATEDATETIME(TODAY(), TIME());
+            S04CustomerExtended.MODIFY(TRUE);
+
+            response.Add(prop.JProperty('success', 'true'));
+
+            S04ActindoSynchBuffer.VALIDATE(Status, S04ActindoSynchBuffer.Status::Processed);
+            S04ActindoSynchBuffer."Processing Timestamp" := CREATEDATETIME(TODAY(), TIME());
+            S04ActindoSynchBuffer."Response Document".CREATEOUTSTREAM(oStream, TEXTENCODING::UTF8);
+            oStream.WRITETEXT(request.ToString());
+            S04ActindoSynchBuffer.MODIFY(TRUE);
+            COMMIT();
+
+          END;
+        END ELSE BEGIN
+
+
+          S04ActindoSynchBuffer."Error Message" := DELSTR(FORMAT(request.GetValue('error')), 250);
+          S04ActindoSynchBuffer.Status := S04ActindoSynchBuffer.Status::Error;
+          S04ActindoSynchBuffer."Response Document".CREATEOUTSTREAM(oStream, TEXTENCODING::UTF8);
+          oStream.WRITETEXT(request.ToString());
+          S04ActindoSynchBuffer.MODIFY(TRUE);
+          COMMIT();
+
+        END;
+      END ELSE BEGIN
+      END;
+    END;
+
+    PROCEDURE PriceResponse@5091713(request@5091700 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";VAR response@5091718 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject");
+    VAR
+      payload@5091711 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      JObject@5091709 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      S04ActindoSynchBuffer@5091714 : Record 80091;
+      JObjectVar@5091706 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      id@5091703 : Code[20];
+      Success@5091713 : Text;
+      BufferId@5091715 : Code[20];
+      NavCustomerId@5091710 : Code[20];
+      oStream@5091717 : OutStream;
+      prop@5091719 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      Error@5091720 : Text;
+    BEGIN
+      // save actindo product ID to Item Record
+      Success := UPPERCASE(FORMAT(request.GetValue('success')));
+      BufferId := FORMAT(request.GetValue('bufferId'));
+
+
+
+      IF S04ActindoSynchBuffer.GET(BufferId) THEN BEGIN
+        IF Success = 'TRUE' THEN BEGIN
+
+
+          response.Add(prop.JProperty('success', 'true'));
+
+          S04ActindoSynchBuffer.VALIDATE(Status, S04ActindoSynchBuffer.Status::Processed);
+          S04ActindoSynchBuffer."Processing Timestamp" := CREATEDATETIME(TODAY(), TIME());
+          S04ActindoSynchBuffer."Response Document".CREATEOUTSTREAM(oStream, TEXTENCODING::UTF8);
+          oStream.WRITETEXT(request.ToString());
+          S04ActindoSynchBuffer.MODIFY(TRUE);
+          COMMIT();
+
+        END ELSE BEGIN
+
+
+          S04ActindoSynchBuffer."Error Message" := DELSTR(FORMAT(request.GetValue('error')), 250);
+          S04ActindoSynchBuffer.Status := S04ActindoSynchBuffer.Status::Error;
+          S04ActindoSynchBuffer."Response Document".CREATEOUTSTREAM(oStream, TEXTENCODING::UTF8);
+          oStream.WRITETEXT(request.ToString());
+          S04ActindoSynchBuffer.MODIFY(TRUE);
+          COMMIT();
+
+        END;
+      END ELSE BEGIN
+      END;
+    END;
+
+    LOCAL PROCEDURE SplitGetPart@5091710(String@5091700 : Text;Delimiter@5091701 : Text;Index@5091702 : Integer) : Text;
+    VAR
+      Pos@5091703 : Integer;
+      i@5091704 : Integer;
+      Current@5091705 : Text;
+    BEGIN
+      Current := String;
+
+      FOR i := 1 TO Index DO BEGIN
+        Pos := STRPOS(Current, Delimiter);
+        IF Pos = 0 THEN
+          EXIT('');
+
+        Current := COPYSTR(Current, Pos + STRLEN(Delimiter));
+      END;
+
+      Pos := STRPOS(Current, Delimiter);
+      IF Pos > 0 THEN
+        EXIT(COPYSTR(Current, 1, Pos - 1))
+      ELSE
+        EXIT(Current);
+    END;
+
+    PROCEDURE FullSynchProducts@5091708();
+    VAR
+      Item@5091700 : Record 27;
+      S04ActindoService@5091701 : Codeunit 80092;
+      i@5091702 : Integer;
+    BEGIN
+      i := 0;
+      Item.RESET;
+      Item.SETFILTER("Actindo POS ID", '<>%1', '');
+      IF Item.FINDSET() THEN BEGIN
+        REPEAT
+          i += 1;
+          S04ActindoService.TransferToSynchBuffer('full', Item."No.");
+        UNTIL Item.NEXT = 0;
+      END;
+
+      MESSAGE(FORMAT(i) + ' Products...');
+    END;
+
+    BEGIN
+    {
+      -----------------------------------------------------------------------------------------
+      # # # # FC SCHALKE 04 INDIVIDUELL # # # #
+      -----------------------------------------------------------------------------------------
+      Date        Version   ReferenceID   Developer  Comment
+      -----------------------------------------------------------------------------------------
+      2025-12-15  S04.01    Dev-70        s04-jra    created object
+    }
+    END.
+  }
+}
+

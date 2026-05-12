@@ -1,0 +1,179 @@
+OBJECT Codeunit 50090 S04 Actindo Core
+{
+  OBJECT-PROPERTIES
+  {
+    Date=10.04.26;
+    Time=19:33:15;
+    Modified=Yes;
+    Version List=S04.01,ACTINDO;
+  }
+  PROPERTIES
+  {
+    OnRun=BEGIN
+
+            IF GetBearerToken() = '' THEN
+              SetBearerToken('oS4rP1nXQk8sJ3hC7dG2zF9aVwB0YpLmR2tH8eQxU5bN7kZcA1fM6jTqE3vW9yL');
+            MESSAGE('gesetzt')
+          END;
+
+  }
+  CODE
+  {
+    VAR
+      dotNetNull@5091703 : DotNet "'mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Object";
+      WebserviceSetup@5091700 : Record 60073;
+
+    PROCEDURE SendRequest@5091700(pMethod@5091700 : Text;pWebserviceEndpoints@5091701 : Record 80090;pRequest@5091702 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";VAR pResponse@5091705 : Text;pTransactionId@5091704 : Text[32]);
+    VAR
+      requestURL@5091703 : Text;
+    BEGIN
+      GetWebserviceSetup();
+      CreateRequestURL(pWebserviceEndpoints, {ref}requestURL, pTransactionId);
+      pResponse := ExecutePayloadRequestWebservice(pMethod, requestURL, pRequest);
+    END;
+
+    LOCAL PROCEDURE CreateRequestURL@5091703(pWebserviceEndpoints@5091700 : Record 80090;VAR pRequestURL@5091701 : Text;pTransactionId@5091702 : Text[32]);
+    BEGIN
+      pRequestURL := WebserviceSetup."Base URL" + pWebserviceEndpoints."Endpoint URL";
+    END;
+
+    LOCAL PROCEDURE ExecutePayloadRequestWebservice@5091713(pMethod@5091706 : Code[10];pRequestUrl@5091701 : Text;pPayload@5091700 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject") : Text;
+    VAR
+      request@5091705 : DotNet "'RestSharp, Version=106.2.1.0, Culture=neutral, PublicKeyToken=598062e77f915f75'.RestSharp.RestRequest";
+      ParameterType@5091707 : DotNet "'RestSharp, Version=106.2.1.0, Culture=neutral, PublicKeyToken=598062e77f915f75'.RestSharp.ParameterType";
+      debugMessage@5091702 : Text;
+      param@5091703 : DotNet "'RestSharp, Version=106.2.1.0, Culture=neutral, PublicKeyToken=598062e77f915f75'.RestSharp.Parameter";
+    BEGIN
+      SetupRequestInternal({ref} request, pRequestUrl);
+
+      IF NOT ISNULL(pPayload) THEN BEGIN
+        request.AddHeader('Content-Type', 'application/json');
+        request.AddHeader('Authorization', 'Bearer ' + GetBearerToken());
+        request.AddParameter('application/json', pPayload.ToString(), ParameterType.RequestBody);
+      END;
+
+      EXIT(ExecuteRequestInternal(pMethod, pRequestUrl, request));
+    END;
+
+    LOCAL PROCEDURE SetupRequestInternal@5091710(VAR request@5091702 : DotNet "'RestSharp, Version=106.2.1.0, Culture=neutral, PublicKeyToken=598062e77f915f75'.RestSharp.RestRequest";pRequestURL@5091701 : Text);
+    VAR
+      ServicePointManager@5091704 : DotNet "'System, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Net.ServicePointManager";
+      SecurityProtocolType@5091703 : DotNet "'System, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Net.SecurityProtocolType";
+    BEGIN
+      // Force TLS 1.2
+      ServicePointManager.SecurityProtocol := SecurityProtocolType.Tls12;
+      request := request.RestRequest();
+    END;
+
+    LOCAL PROCEDURE ExecuteRequestInternal@5091707(method@5091705 : Text;pRequestURL@5091709 : Text;request@5091703 : DotNet "'RestSharp, Version=106.2.1.0, Culture=neutral, PublicKeyToken=598062e77f915f75'.RestSharp.RestRequest") : Text;
+    VAR
+      VivenuSetup@5091701 : Record 66203;
+      client@5091702 : DotNet "'Schalke04.RestClient, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null'.Schalke04.RestClient.RestClient";
+      response@5091700 : DotNet "'RestSharp, Version=106.2.1.0, Culture=neutral, PublicKeyToken=598062e77f915f75'.RestSharp.RestResponse";
+      debugMessage@5091706 : Text;
+      param@5091707 : DotNet "'RestSharp, Version=106.2.1.0, Culture=neutral, PublicKeyToken=598062e77f915f75'.RestSharp.Parameter";
+      ParameterType@5091708 : DotNet "'RestSharp, Version=106.2.1.0, Culture=neutral, PublicKeyToken=598062e77f915f75'.RestSharp.ParameterType";
+    BEGIN
+      client := client.RestClient(pRequestURL);
+
+      CASE method OF
+        'DELETE': response := client.ExecuteDelete(request);
+        'GET':    response := client.ExecuteGet(request);
+        'PATCH':  response := client.ExecutePatch(request);
+        'POST':   response := client.ExecutePost(request);
+        'PUT':    response := client.ExecutePut(request);
+        ELSE
+          ERROR('Invalid request method: %1', method);
+      END;
+
+      HandleResponseError(method, pRequestURL, response);
+      EXIT(response.Content);
+    END;
+
+    LOCAL PROCEDURE HandleResponseError@5091720(method@5091701 : Code[10];relativeUrl@5091700 : Text;response@5091702 : DotNet "'RestSharp, Version=106.2.1.0, Culture=neutral, PublicKeyToken=598062e77f915f75'.RestSharp.IRestResponse");
+    VAR
+      RequestTxt@5091703 : Text;
+      ContentTxt@5091704 : Text;
+      ResponseUriTxt@5091705 : Text;
+    BEGIN
+      IF response.IsSuccessful THEN
+        EXIT;
+
+      ERROR('Kommunikationsfehler mit Actindo-Webservice:\\' +
+            '%1 %2\\' +
+            'HTTP Status %3\' +
+            '%4\' +
+            '%5',
+            method,
+            relativeUrl,
+            UnboxInteger(response.StatusCode),
+            response.ErrorMessage,
+            response.Content);
+    END;
+
+    LOCAL PROCEDURE UnboxInteger@5091715(v@5091700 : Integer) : Integer;
+    BEGIN
+      EXIT(v);
+    END;
+
+    LOCAL PROCEDURE "###Helper Functions###"@5091701();
+    BEGIN
+    END;
+
+    LOCAL PROCEDURE GetWebserviceSetup@5091714();
+    BEGIN
+      WITH WebserviceSetup DO BEGIN
+        GET('ACTINDO');
+        //TESTFIELD("Client ID");
+        //TESTFIELD("Client Secret");
+        CALCFIELDS("Bearer Token");
+        IF NOT "Bearer Token".HASVALUE() THEN
+          ERROR('No valid bearer token found.');
+      END;
+    END;
+
+    LOCAL PROCEDURE GetBearerToken@5091705() TokenText : Text;
+    VAR
+      InStr@5091700 : InStream;
+    BEGIN
+      CLEAR(TokenText);
+      IF WebserviceSetup."Bearer Token".HASVALUE() THEN BEGIN
+        WebserviceSetup.CALCFIELDS("Bearer Token");
+        WebserviceSetup."Bearer Token".CREATEINSTREAM(InStr);
+        InStr.READ(TokenText);
+        EXIT(TokenText);
+      END;
+    END;
+
+    LOCAL PROCEDURE SetBearerToken@5091709(NewToken@5091700 : Text);
+    VAR
+      OutStr@5091701 : OutStream;
+    BEGIN
+      IF NOT WebserviceSetup.GET('ACTINDO') THEN
+        ERROR('WebserviceSetup-Eintrag ALLINONEAPI nicht gefunden');
+
+      CLEAR(WebserviceSetup."Bearer Token");
+      WebserviceSetup."Bearer Token".CREATEOUTSTREAM(OutStr, TEXTENCODING::UTF8);
+
+      OutStr.WRITE(NewToken);
+
+      WebserviceSetup.MODIFY(TRUE);
+    END;
+
+    LOCAL PROCEDURE "###Test Functions###"@5091708();
+    BEGIN
+    END;
+
+    BEGIN
+    {
+      --------------------------------------------------------------------------------------------------------
+                              # # # #    FC SCHALKE 04 INDIVIDUELL    # # # #
+      --------------------------------------------------------------------------------------------------------
+      Date        Version     Reference-ID       Developer     Comment
+      --------------------------------------------------------------------------------------------------------
+      2025-09-08  S04.00      DEV-69             s04-jra       Object Creation
+    }
+    END.
+  }
+}
+

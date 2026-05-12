@@ -1,0 +1,77 @@
+OBJECT Table 81165 S04 Actindo Trans.Buff. Line
+{
+  OBJECT-PROPERTIES
+  {
+    Date=10.04.26;
+    Time=18:12:46;
+    Modified=Yes;
+    Version List=S04.00,ACTINDO;
+  }
+  PROPERTIES
+  {
+    DataPerCompany=Yes;
+  }
+  FIELDS
+  {
+    { 1   ;   ;Entry No.           ;Integer       ;AutoIncrement=Yes;
+                                                   CaptionML=DEU=Eintragsnr. }
+    { 2   ;   ;Header Entry No.    ;Integer       ;CaptionML=DEU=Header-Eintragsnr. }
+    { 3   ;   ;Line No.            ;Integer       ;CaptionML=DEU=Zeilennr. }
+    { 4   ;   ;Actindo Position ID ;Integer       ;CaptionML=DEU=Actindo Positions-ID }
+    { 5   ;   ;Business Document ID;Integer       ;CaptionML=DEU=Business Document ID }
+    { 6   ;   ;Item No.            ;Code20        ;CaptionML=DEU=Artikelnummer }
+    { 7   ;   ;Item Name           ;Text100       ;CaptionML=DEU=Artikelname }
+    { 8   ;   ;Quantity            ;Decimal       ;CaptionML=DEU=Menge }
+    { 9   ;   ;Unit Of Measure     ;Code10        ;CaptionML=DEU=Einheit }
+    { 10  ;   ;Unit Price          ;Decimal       ;CaptionML=DEU=Einzelpreis }
+    { 11  ;   ;Amount incl. VAT    ;Decimal       ;CaptionML=DEU=Bruttobetrag }
+    { 12  ;   ;Amount excl. VAT    ;Decimal       ;CaptionML=DEU=Nettobetrag }
+    { 13  ;   ;VATPercent          ;Decimal       ;CaptionML=[DEU=Mehrwertsteuer %;
+                                                              ENU=<Mehrwertsteuer Prozent>] }
+    { 14  ;   ;VAT Identifier      ;Code10        ;CaptionML=DEU=MehrwertsteuerschlÅssel }
+    { 15  ;   ;Base Price          ;Decimal       ;CaptionML=DEU=Grundpreis }
+    { 16  ;   ;Description         ;Text250       ;CaptionML=DEU=Langtext }
+    { 17  ;   ;Bin Code            ;Code20        ;CaptionML=DEU=Lagerfach }
+    { 18  ;   ;Status              ;Option        ;FieldClass=FlowField;
+                                                   CalcFormula=Lookup("S04 Actindo Trans.Buff. Header".Status);
+                                                   CaptionML=DEU=Status;
+                                                   OptionCaptionML=[DEU=Offen,In Verarbeitung,Verarbeitet,Fehler;
+                                                                    ENU=Open,In Progress,Processed,Error];
+                                                   OptionString=Open,InProgress,Processed,Error;
+                                                   Editable=No }
+    { 19  ;   ;Error Message       ;Text250       ;CaptionML=DEU=Fehlermeldung }
+    { 20  ;   ;JSON Source         ;BLOB          ;OnLookup=VAR
+                                                              FileManagement@5091700 : Codeunit 419;
+                                                            BEGIN
+                                                              CALCFIELDS("JSON Source");
+                                                              "JSON Source".EXPORT('c:\temp\JSON_Blob.json');
+                                                              HYPERLINK(FileManagement.DownloadTempFile('c:\temp\JSON_Blob.json'));
+                                                            END;
+
+                                                   CaptionML=DEU=Original JSON }
+    { 21  ;   ;Created At          ;DateTime      ;CaptionML=DEU=Erstellt am }
+  }
+  KEYS
+  {
+    {    ;Business Document ID,Header Entry No.,Line No.;
+                                                   Clustered=Yes }
+  }
+  FIELDGROUPS
+  {
+  }
+  CODE
+  {
+
+    BEGIN
+    {
+      -----------------------------------------------------------------------------------------
+                              # # # # FC SCHALKE 04 INDIVIDUELL # # # #
+      -----------------------------------------------------------------------------------------
+      Datum       Version     ReferenceID   Entwickler    Bemerkung
+      -----------------------------------------------------------------------------------------
+      2025-09-08  S04.00      DEV-73        s04-frank     Object Creation
+    }
+    END.
+  }
+}
+

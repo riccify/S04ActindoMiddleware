@@ -1,0 +1,108 @@
+OBJECT Table 81164 S04 Actindo Trans.Buff. Header
+{
+  OBJECT-PROPERTIES
+  {
+    Date=10.04.26;
+    Time=18:12:41;
+    Modified=Yes;
+    Version List=S04.00,ACTINDO;
+  }
+  PROPERTIES
+  {
+    DataPerCompany=Yes;
+    DataCaptionFields=Document Number;
+    OnDelete=BEGIN
+               S04ActindoTransBuffLine.RESET();
+               S04ActindoTransBuffLine.LOCKTABLE();
+               S04ActindoTransBuffLine.SETRANGE("Header Entry No.", "Entry No.");
+               S04ActindoTransBuffLine.DELETEALL(TRUE);
+             END;
+
+    LookupPageID=Page81166;
+    DrillDownPageID=Page81166;
+  }
+  FIELDS
+  {
+    { 1   ;   ;Entry No.           ;Integer       ;AutoIncrement=Yes;
+                                                   CaptionML=DEU=Eintragsnr. }
+    { 2   ;   ;Actindo Document ID ;Integer       ;CaptionML=DEU=Actindo Beleg-ID }
+    { 3   ;   ;Document Number     ;Code20        ;CaptionML=DEU=Belegnummer }
+    { 4   ;   ;Document Type       ;Code10        ;CaptionML=DEU=Belegart }
+    { 5   ;   ;Project ID          ;Code50        ;CaptionML=DEU=Projekt-ID }
+    { 6   ;   ;Document Date       ;Date          ;CaptionML=DEU=Belegdatum }
+    { 7   ;   ;Value Date          ;Date          ;CaptionML=DEU=Valutadatum }
+    { 8   ;   ;Customer/Supplier ID;Integer       ;CaptionML=DEU=Debitor/Kreditor-Nr. }
+    { 9   ;   ;Customer/Supplier Name;Text100     ;CaptionML=DEU=Debitor/Kreditor-Name }
+    { 10  ;   ;Customer/Supplier Address;Text100  ;CaptionML=DEU=Debitor/Kreditor-Adresse }
+    { 11  ;   ;Customer/Supplier Zip;Code20       ;CaptionML=DEU=Debitor/Kreditor-PLZ }
+    { 12  ;   ;Customer/Supplier City;Text50      ;CaptionML=DEU=Debitor/Kreditor-Ort }
+    { 13  ;   ;Customer/Supplier Country;Code10   ;CaptionML=DEU=Debitor/Kreditor-Land }
+    { 14  ;   ;Customer/Supplier Email;Text100    ;CaptionML=DEU=Debitor/Kreditor-E-Mail }
+    { 15  ;   ;Payment Type        ;Code10        ;CaptionML=DEU=Zahlungsart }
+    { 16  ;   ;Payment Type Label  ;Text50        ;CaptionML=DEU=Zahlungsart (Text) }
+    { 17  ;   ;Currency            ;Code10        ;CaptionML=DEU=W„hrung }
+    { 18  ;   ;Net Amount          ;Decimal       ;CaptionML=DEU=Nettobetrag }
+    { 19  ;   ;Gross Amount        ;Decimal       ;CaptionML=DEU=Bruttobetrag }
+    { 20  ;   ;VAT Percent         ;Decimal       ;CaptionML=DEU=Mehrwertsteuer % }
+    { 21  ;   ;VAT Amount          ;Decimal       ;CaptionML=DEU=Mehrwertsteuerbetrag }
+    { 22  ;   ;Delivery Name       ;Text100       ;CaptionML=DEU=Liefername }
+    { 23  ;   ;Delivery Address    ;Text100       ;CaptionML=DEU=Lieferadresse }
+    { 24  ;   ;Delivery Zip        ;Code20        ;CaptionML=DEU=Liefer-PLZ }
+    { 25  ;   ;Delivery City       ;Text50        ;CaptionML=DEU=Lieferort }
+    { 26  ;   ;Delivery Country    ;Code10        ;CaptionML=DEU=Lieferland }
+    { 27  ;   ;Delivery Email      ;Text100       ;CaptionML=DEU=Liefer-E-Mail }
+    { 28  ;   ;Status              ;Option        ;CaptionML=DEU=Status;
+                                                   OptionCaptionML=[DEU=Offen,In Verarbeitung,Verarbeitet,Fehler;
+                                                                    ENU=Open,In Progress,Processed,Error];
+                                                   OptionString=Open,InProgress,Processed,Error }
+    { 29  ;   ;Error Message       ;Text250       ;CaptionML=DEU=Fehlermeldung }
+    { 30  ;   ;JSON Source         ;BLOB          ;OnLookup=VAR
+                                                              FileManagement@5091700 : Codeunit 419;
+                                                            BEGIN
+                                                              CALCFIELDS("JSON Source");
+                                                              "JSON Source".EXPORT('c:\temp\JSON_Blob.json');
+                                                              HYPERLINK(FileManagement.DownloadTempFile('c:\temp\JSON_Blob.json'));
+                                                            END;
+
+                                                   CaptionML=DEU=Original JSON }
+    { 31  ;   ;Created At          ;DateTime      ;CaptionML=DEU=Erstellt am }
+    { 32  ;   ;Processed to Document No.;Code20   ;CaptionML=DEU=Verarbeit in Beleg }
+    { 33  ;   ;Processed           ;Boolean       ;CaptionML=DEU=Verarbeitet }
+    { 34  ;   ;Processed On        ;DateTime      ;CaptionML=DEU=Verarbeitet am }
+    { 35  ;   ;Processed By        ;Code50        ;CaptionML=DEU=Verarbeitet von }
+    { 36  ;   ;POS Location ID     ;Integer       ;CaptionML=DEU=POS Lagerort ID }
+    { 37  ;   ;POS Location Name   ;Text100       ;CaptionML=DEU=POS Lagerort Name }
+    { 38  ;   ;POS Cashdesk ID     ;Integer       ;CaptionML=DEU=POS Kasse ID }
+    { 39  ;   ;POS Cashdesk Name   ;Text100       ;CaptionML=DEU=POS Kasse Name }
+    { 40  ;   ;Voucher Lines exist ;Boolean       ;FieldClass=FlowField;
+                                                   CalcFormula=Exist("S04 Actindo Trans.Buff. Line" WHERE (Item No.=FILTER(''|RG),
+                                                                                                           Header Entry No.=FIELD(Entry No.)));
+                                                   CaptionML=[DEU=Gutscheinzeilen vorhanden;
+                                                              ENU=Voucher Lines exist];
+                                                   Editable=No }
+  }
+  KEYS
+  {
+    {    ;Document Number,Document Type           ;Clustered=Yes }
+  }
+  FIELDGROUPS
+  {
+  }
+  CODE
+  {
+    VAR
+      S04ActindoTransBuffLine@5091700 : Record 81165;
+
+    BEGIN
+    {
+      -----------------------------------------------------------------------------------------
+                              # # # # FC SCHALKE 04 INDIVIDUELL # # # #
+      -----------------------------------------------------------------------------------------
+      Datum       Version     ReferenceID   Entwickler    Bemerkung
+      -----------------------------------------------------------------------------------------
+      2025-09-08  S04.00      DEV-73        s04-frank     Object Creation
+    }
+    END.
+  }
+}
+

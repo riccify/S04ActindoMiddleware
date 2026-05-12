@@ -1,0 +1,47 @@
+OBJECT Codeunit 80093 S04 Actindo Events
+{
+  OBJECT-PROPERTIES
+  {
+    Date=19.12.25;
+    Time=15:43:26;
+    Modified=Yes;
+    Version List=S04.00,ACTINDO;
+  }
+  PROPERTIES
+  {
+    OnRun=BEGIN
+          END;
+
+  }
+  CODE
+  {
+    VAR
+      S04ActindoSetup@5091700 : Record 80092;
+
+    LOCAL PROCEDURE "### CUSTOMER HOOKS ###"@5091705();
+    BEGIN
+    END;
+
+    [EventSubscriber(Table,18,OnAfterDeleteEvent)]
+    LOCAL PROCEDURE OnAfterDeleteCustomer@5091708();
+    BEGIN
+      // ...
+    END;
+
+    LOCAL PROCEDURE "### SALES PRICE HOOKS ###"@5091700();
+    BEGIN
+    END;
+
+    BEGIN
+    {
+      -----------------------------------------------------------------------------------------
+                              # # # # FC SCHALKE 04 INDIVIDUELL # # # #
+      -----------------------------------------------------------------------------------------
+      Datum       Version     ReferenceID   Entwickler    Bemerkung
+      -----------------------------------------------------------------------------------------
+      2025-09-08  S04.00      DEV-69        s04-frank       Object Creation
+    }
+    END.
+  }
+}
+

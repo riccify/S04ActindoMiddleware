@@ -1,0 +1,559 @@
+OBJECT Codeunit 81123 S04 Actindo Sync Collect
+{
+  OBJECT-PROPERTIES
+  {
+    Date=15.04.26;
+    Time=13:30:57;
+    Modified=Yes;
+    Version List=S04.01,ACTINDO;
+  }
+  PROPERTIES
+  {
+    OnRun=VAR
+            StartDT@5091700 : DateTime;
+            EndDT@5091701 : DateTime;
+            Duration@5091702 : Integer;
+            S04ActindoItemSyncState@5091703 : Record 81123;
+          BEGIN
+          END;
+
+  }
+  CODE
+  {
+    VAR
+      ActindoSetup@5091700 : Record 80092;
+
+    PROCEDURE CollectRelevantEntriesForSyncBuffer@5091701();
+    VAR
+      Item@5091700 : Record 27;
+      ItemVariant@5091701 : Record 5401;
+      ItemCrossReference@5091702 : Record 5717;
+      ItemTranslation@5091703 : Record 30;
+      Customer@5091704 : Record 18;
+    BEGIN
+      //Alle Items und potenzielle Varianten durchgehen, die fÅr POS aktiviert sind
+      Item.SETRANGE(POS, TRUE);
+      Item.SETFILTER("Item Status", '<>%1&<>%2', Item."Item Status"::Blocked, Item."Item Status"::Sold);
+      IF Item.FINDSET() THEN BEGIN
+        REPEAT
+          ItemVariant.SETRANGE("Item No.", Item."No.");
+          ItemVariant.SETRANGE("gevis POS Active", TRUE);
+          IF ItemVariant.FINDSET() THEN BEGIN
+            REPEAT
+              CheckIfItemMustBeUpdated(Item, ItemVariant);
+            UNTIL ItemVariant.NEXT = 0;
+          END ELSE BEGIN
+            CLEAR(ItemVariant);
+            CheckIfItemMustBeUpdated(Item, ItemVariant);
+          END;
+        UNTIL Item.NEXT() = 0;
+      END;
+
+      //Kunden durchsuchen
+      Customer.SETRANGE(Type, Customer.Type::Person);
+      Customer.SETRANGE(Blocked, Customer.Blocked::" ");
+      Customer.SETFILTER("Block Reason", '');
+      Customer.SETFILTER("Telex No.", '<>%1', '');
+      IF Customer.FINDSET() THEN BEGIN
+        REPEAT
+          CheckIfCustomerMustBeUpdated(Customer);
+        UNTIL Customer.NEXT() = 0;
+      END;
+    END;
+
+    LOCAL PROCEDURE CheckIfItemMustBeUpdated@5091703(Item@5091700 : Record 27;ItemVariant@5091701 : Record 5401);
+    VAR
+      ItemCrossReference@5091703 : Record 5717;
+      ItemTranslation@5091702 : Record 30;
+      S04ActindoItemSyncState@5091704 : Record 81123;
+      FullUpdateNecessary@5091705 : Boolean;
+      InventoryJSONObject@5091706 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      PricesJSONObject@5091708 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      JProperty@5091707 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      UpdatePriceNecessary@5091709 : Boolean;
+      UpdateInventoryNecessary@5091710 : Boolean;
+    BEGIN
+      //Wenn noch kein Eintrag vorhanden, einen leeren anlegen
+      IF NOT S04ActindoItemSyncState.GET(Item."No.", ItemVariant.Code, S04ActindoItemSyncState."Entry Type"::Item) THEN BEGIN
+        S04ActindoItemSyncState.INIT;
+        S04ActindoItemSyncState."Item No." := Item."No.";
+        S04ActindoItemSyncState."Variant Code" := ItemVariant.Code;
+        S04ActindoItemSyncState."Entry Type" := S04ActindoItemSyncState."Entry Type"::Item;
+        S04ActindoItemSyncState.INSERT;
+        ProcessUpdate(S04ActindoItemSyncState, 'full');
+        EXIT;
+      END;
+
+      //Die restlichen Sachen erst prÅfen wenn der Artikel von Actindo bestÑtigt wurde und wir eine ID dafÅr erhalten haben
+      IF Item."Actindo POS ID" <> '' THEN BEGIN
+
+        //Item Descriptions checken
+        IF S04ActindoItemSyncState.ItemDescription <> Item.Description THEN BEGIN
+          S04ActindoItemSyncState.ItemDescription := Item.Description;
+          FullUpdateNecessary := TRUE;
+        END;
+        IF S04ActindoItemSyncState.ItemDescription2 <> Item."Description 2" THEN BEGIN
+          S04ActindoItemSyncState.ItemDescription2 := Item."Description 2";
+          FullUpdateNecessary := TRUE;
+        END;
+
+        //EAN Codes checken
+        ItemCrossReference.SETRANGE("Item No.", Item."No.");
+        ItemCrossReference.SETRANGE("Cross-Reference Type", ItemCrossReference."Cross-Reference Type"::"Bar Code");
+        IF ItemVariant.Code <> '' THEN
+          ItemCrossReference.SETRANGE("Variant Code", ItemVariant.Code);
+
+        IF ItemCrossReference.FINDFIRST THEN BEGIN
+          IF S04ActindoItemSyncState."Cross-Reference No." <> ItemCrossReference."Cross-Reference No." THEN BEGIN
+            S04ActindoItemSyncState."Cross-Reference No." := ItemCrossReference."Cross-Reference No.";
+            FullUpdateNecessary := TRUE;
+          END;
+        END;
+
+        //Translations checken
+        CheckTranslations(S04ActindoItemSyncState, 'DEU', FullUpdateNecessary);
+        CheckTranslations(S04ActindoItemSyncState, 'ENG', FullUpdateNecessary);
+
+        IF FullUpdateNecessary THEN BEGIN
+          ProcessUpdate(S04ActindoItemSyncState, 'full');
+          EXIT;
+        END;
+
+        InventoryJSONObject := InventoryJSONObject.JObject();
+        PricesJSONObject := PricesJSONObject.JObject();
+
+        //Inventory Checken
+        CheckInventory(S04ActindoItemSyncState, InventoryJSONObject, Item, ItemVariant.Code, UpdateInventoryNecessary);
+
+        //Preise checken
+        CheckPrice(S04ActindoItemSyncState, PricesJSONObject, Item, ItemVariant.Code, UpdatePriceNecessary);
+
+
+        IF UpdateInventoryNecessary AND (NOT UpdatePriceNecessary) THEN
+          ProcessUpdate(S04ActindoItemSyncState, 'inventory');
+
+        IF UpdatePriceNecessary AND (NOT UpdateInventoryNecessary) THEN
+          ProcessUpdate(S04ActindoItemSyncState, 'price');
+
+      END;
+    END;
+
+    LOCAL PROCEDURE CheckIfCustomerMustBeUpdated@5091705(Customer@5091700 : Record 18);
+    VAR
+      S04ActindoItemSyncState@5091704 : Record 81123;
+      CustomerUpdateNecessary@5091705 : Boolean;
+      CustomerJSONObject@5091706 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      JProperty@5091707 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+    BEGIN
+      //Wenn noch kein Eintrag vorhanden, einen leeren anlegen
+      IF NOT S04ActindoItemSyncState.GET(Customer."No.", '', S04ActindoItemSyncState."Entry Type"::Customer) THEN BEGIN
+        S04ActindoItemSyncState.INIT;
+        S04ActindoItemSyncState."Item No." := Customer."No.";
+        S04ActindoItemSyncState."Variant Code" := '';
+        S04ActindoItemSyncState."Entry Type" := S04ActindoItemSyncState."Entry Type"::Customer;
+        S04ActindoItemSyncState.INSERT;
+        ProcessUpdate(S04ActindoItemSyncState, 'customer');
+        EXIT;
+      END;
+
+      CustomerJSONObject := CustomerJSONObject.JObject();
+
+      //Preise checken
+      CheckCustomer(S04ActindoItemSyncState, CustomerJSONObject, CustomerUpdateNecessary);
+
+      IF CustomerUpdateNecessary THEN
+        ProcessUpdate(S04ActindoItemSyncState, 'customer');
+    END;
+
+    LOCAL PROCEDURE ProcessUpdate@5091700(VAR S04ActindoItemSyncState@5091703 : Record 81123;Tag@5091700 : Text[30]);
+    VAR
+      S04ActindoService@5091701 : Codeunit 80092;
+    BEGIN
+      S04ActindoService.TransferToSynchBuffer(Tag, S04ActindoItemSyncState."Item No.");
+      S04ActindoItemSyncState."Last Update" := CURRENTDATETIME;
+      S04ActindoItemSyncState."Update Necessary" := FALSE;
+      S04ActindoItemSyncState.MODIFY();
+    END;
+
+    LOCAL PROCEDURE CheckTranslations@5091711(VAR S04ActindoItemSyncState@5091700 : Record 81123;LanguageCode@5091701 : Code[10];VAR UpdateNecessary@5091703 : Boolean);
+    VAR
+      ItemTranslation@5091702 : Record 30;
+    BEGIN
+      ItemTranslation.SETRANGE("Item No.", S04ActindoItemSyncState."Item No.");
+      ItemTranslation.SETRANGE("Language Code", LanguageCode);
+      IF S04ActindoItemSyncState."Variant Code" <> '' THEN
+        ItemTranslation.SETRANGE("Variant Code", S04ActindoItemSyncState."Variant Code");
+
+      IF ItemTranslation.FINDSET THEN BEGIN
+        IF LanguageCode = 'DEU' THEN BEGIN
+          IF S04ActindoItemSyncState."Transl. WebKeywords DE" <> ItemTranslation."Web Keywords" THEN BEGIN
+              S04ActindoItemSyncState."Transl. WebKeywords DE" := ItemTranslation."Web Keywords";
+              UpdateNecessary := TRUE;
+          END;
+          IF S04ActindoItemSyncState."Transl. Description DE" <> ItemTranslation.Description THEN BEGIN
+              S04ActindoItemSyncState."Transl. Description DE" := ItemTranslation.Description;
+              UpdateNecessary := TRUE;
+          END;
+          IF S04ActindoItemSyncState."Transl. WebMetaDesc DE" <> ItemTranslation."Web Meta Description" THEN BEGIN
+              S04ActindoItemSyncState."Transl. WebMetaDesc DE" := ItemTranslation."Web Meta Description";
+              UpdateNecessary := TRUE;
+          END;
+          IF S04ActindoItemSyncState."Transl. WebMetaTitle DE" <> ItemTranslation."Web Meta Title" THEN BEGIN
+              S04ActindoItemSyncState."Transl. WebMetaTitle DE" := ItemTranslation."Web Meta Title";
+              UpdateNecessary := TRUE;
+          END;
+        END;
+        IF LanguageCode = 'ENG' THEN BEGIN
+          IF S04ActindoItemSyncState."Transl. WebKeywords EN" <> ItemTranslation."Web Keywords" THEN BEGIN
+              S04ActindoItemSyncState."Transl. WebKeywords EN" := ItemTranslation."Web Keywords";
+              UpdateNecessary := TRUE;
+          END;
+          IF S04ActindoItemSyncState."Transl. Description EN" <> ItemTranslation.Description THEN BEGIN
+              S04ActindoItemSyncState."Transl. Description EN" := ItemTranslation.Description;
+              UpdateNecessary := TRUE;
+          END;
+          IF S04ActindoItemSyncState."Transl. WebMetaDesc EN" <> ItemTranslation."Web Meta Description" THEN BEGIN
+              S04ActindoItemSyncState."Transl. WebMetaDesc EN" := ItemTranslation."Web Meta Description";
+              UpdateNecessary := TRUE;
+          END;
+          IF S04ActindoItemSyncState."Transl. WebMetaTitle EN" <> ItemTranslation."Web Meta Title" THEN BEGIN
+              S04ActindoItemSyncState."Transl. WebMetaTitle EN" := ItemTranslation."Web Meta Title";
+              UpdateNecessary := TRUE;
+          END;
+        END;
+      END;
+    END;
+
+    LOCAL PROCEDURE CheckInventory@5091702(VAR S04ActindoItemSyncState@5091711 : Record 81123;VAR inventoryObject@5091702 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";Item@5091701 : Record 27;VarCode@5091710 : Code[20];VAR UpdateNecessary@5091716 : Boolean);
+    VAR
+      JToken@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JToken";
+      prop@5091708 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      currenciesArray@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      inventoryArray@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      inventoryObj@5091700 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      S04ItemServices@5091709 : Codeunit 60052;
+      Location@5091706 : Record 14;
+      itemStockValue@5091707 : Decimal;
+      InStream@5091712 : InStream;
+      OutStream@5091713 : OutStream;
+      OldInventoryJSON@5091714 : Text;
+      NewInventoryJSON@5091715 : Text;
+    BEGIN
+      //Sammelt BestÑnde in einem JSON
+      Location.RESET();
+      Location.SETFILTER("Actindo POS Location Name", '<>%1', '');
+      IF Location.FINDSET() THEN BEGIN
+        inventoryArray := inventoryArray.JArray();
+
+        REPEAT
+          IF Location."Actindo POS Stock Synch" THEN BEGIN
+            IF VarCode <> '' THEN
+              itemStockValue := S04ItemServices.GetItemStock(Item."No.", VarCode, Location.Code)
+            ELSE
+              itemStockValue := S04ItemServices.GetItemStock(Item."No.", '', Location.Code);
+
+            inventoryObj := inventoryObj.JObject();
+            inventoryObj.Add(prop.JProperty('warehouseId', Location."Actindo POS Location Name"));
+            inventoryObj.Add(prop.JProperty('compartmentId', 111)); // default value
+            inventoryObj.Add(prop.JProperty('stock', itemStockValue));
+
+            JToken := inventoryObj;
+            inventoryArray.Add(JToken);
+          END;
+        UNTIL Location.NEXT() = 0;
+
+        IF inventoryArray.Count() > 0 THEN
+          inventoryObject.Add(prop.JProperty('inventory', inventoryArray));
+
+        //Das letzte JSON mit dem aktuellen vergleichen
+        S04ActindoItemSyncState.CALCFIELDS("Item Inventory");
+        S04ActindoItemSyncState."Item Inventory".CREATEINSTREAM(InStream);
+        InStream.READ(OldInventoryJSON);
+        NewInventoryJSON := inventoryObject.ToString();
+        //Update ist notwendig, JSON stimmt nicht Åberein
+        IF OldInventoryJSON <> NewInventoryJSON THEN BEGIN
+          S04ActindoItemSyncState."Item Inventory".CREATEOUTSTREAM(OutStream);
+          OutStream.WRITE(NewInventoryJSON);
+          UpdateNecessary := TRUE;
+        END;
+
+      END;
+    END;
+
+    LOCAL PROCEDURE CheckPrice@5091729(VAR S04ActindoItemSyncState@5091729 : Record 81123;VAR pricesJSONObject@5091727 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";Item@5091701 : Record 27;VarCode@5091700 : Code[20];VAR UpdateNecessary@5091728 : Boolean);
+    VAR
+      prop@5091710 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      JToken@5091711 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JToken";
+      currenciesArray@5091709 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      currencyObject@5091708 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      basePriceObject@5091707 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      BulkAndPromotionPricesArray@5091706 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      bulkPromoObj@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      pricesObject@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      msrpObject@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      employeePriceObject@5091716 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      employeeCurrenciesArray@5091718 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      employeeCurrencyObject@5091717 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      memberPriceObject@5091723 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      memberCurrenciesArray@5091722 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";
+      memberCurrencyObject@5091721 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      recPrice@5091702 : Record 7002;
+      BulkAndPromotionPrice@5091714 : Record 7002;
+      MemberPrice@5091724 : Record 7002;
+      CustomerPriceGroup@5091715 : Record 6;
+      HasMemberPrice@5091725 : Boolean;
+      HasEmployeePrice@5091726 : Boolean;
+      taxClassId@5091712 : Integer;
+      employeeDiscount@5091719 : Decimal;
+      employeePrice@5091720 : Decimal;
+      PriceServices@5091713 : Codeunit 5242856;
+      InStream@5091733 : InStream;
+      OutStream@5091732 : OutStream;
+      OldJSON@5091731 : Text;
+      NewJSON@5091730 : Text;
+    BEGIN
+      //Sammelt Preise in einem JSON
+      recPrice.RESET();
+      recPrice.SETRANGE("Item No.", Item."No.");
+
+      // check if we have a variant item in JObject and get variant code
+      IF VarCode <> '' THEN
+        recPrice.SETRANGE("Variant Code", VarCode);
+
+      recPrice.SETFILTER("Starting Date and Time",'%1|<=%2',0DT,CREATEDATETIME(WORKDATE(),TIME()));
+      recPrice.SETFILTER("Ending Date and Time",'%1|>=%2',0DT,CREATEDATETIME(WORKDATE(),TIME()));
+      recPrice.SETRANGE("Sales Type", recPrice."Sales Type"::"All Customers");
+
+      IF recPrice.FINDSET() THEN BEGIN
+        CheckActindoSetup();
+
+        // define tax class
+        CASE Item."VAT Prod. Posting Group" OF
+          'FAN19', 'FAN16' : taxClassId := ActindoSetup."Default Taxclass ID"; // default
+          'FAN07'          : taxClassId := ActindoSetup."Reduced Taxclass ID"; // reduced
+          'M00'            : taxClassId := ActindoSetup."Free Taxclass ID";    // free
+        END;
+
+        // create baseprice object
+        BuildPriceObject({ref}pricesObject, {ref}currenciesArray, {ref}currencyObject, recPrice."Unit Price", recPrice."Price Includes VAT", taxClassId);
+
+        // check promotion prices
+        BulkAndPromotionPrice.RESET();
+        BulkAndPromotionPrice.SETRANGE("Item No.", Item."No.");
+        BulkAndPromotionPrice.SETFILTER("Starting Date and Time", '%1|<=%2', 0DT, CREATEDATETIME(WORKDATE(), TIME()));
+        BulkAndPromotionPrice.SETFILTER("Ending Date and Time", '%1|>=%2', 0DT, CREATEDATETIME(WORKDATE(), TIME()));
+        BulkAndPromotionPrice.SETRANGE("Sales Type", BulkAndPromotionPrice."Sales Type"::"All Customers"); // !!!
+        BulkAndPromotionPrice.SETFILTER("Sales Code", '<>%1', '');
+        BulkAndPromotionPricesArray := BulkAndPromotionPricesArray.JArray();
+        IF BulkAndPromotionPrice.FINDSET() THEN BEGIN
+          REPEAT
+            bulkPromoObj := bulkPromoObj.JObject();
+            bulkPromoObj.Add(prop.JProperty('description', STRSUBSTNO('Angebotspreis fÅr %1', Item."No.")));
+            bulkPromoObj.Add(prop.JProperty('startQuantity', 1));
+            bulkPromoObj.Add(prop.JProperty('percentage', 0));
+            bulkPromoObj.Add(prop.JProperty('validFrom', recPrice."Starting Date and Time"));
+            bulkPromoObj.Add(prop.JProperty('validTo', recPrice."Ending Date and Time"));
+            bulkPromoObj.Add(prop.JProperty('minQuantity', BulkAndPromotionPrice."Minimum Quantity"));
+            bulkPromoObj.Add(prop.JProperty('price', BulkAndPromotionPrice."Unit Price"));
+            JToken := bulkPromoObj;
+            BulkAndPromotionPricesArray.Add(JToken);
+          UNTIL BulkAndPromotionPrice.NEXT() = 0;
+        END;
+        IF BulkAndPromotionPricesArray.Count() > 0 THEN
+          currencyObject.Add(prop.JProperty('bulkAndPromotionPrices', BulkAndPromotionPricesArray));
+
+        // add base and promotion/bulk prices to payload
+        pricesJSONObject.Add(prop.JProperty('_pim_price', pricesObject));
+
+        // define employee price
+        HasEmployeePrice := FALSE;
+
+        CASE Item."Item Disc. Group" OF
+          'RABATT10':
+            BEGIN
+              employeeDiscount := recPrice."Unit Price" * 10 / 100;
+              employeePrice    := ROUND(recPrice."Unit Price" - employeeDiscount, 0.01);
+              HasEmployeePrice := TRUE;
+            END;
+          'RABATT20':
+            BEGIN
+              employeeDiscount := recPrice."Unit Price" * 20 / 100;
+              employeePrice    := ROUND(recPrice."Unit Price" - employeeDiscount, 0.01);
+              HasEmployeePrice := TRUE;
+            END;
+        END;
+
+        // add employee price to payload
+        IF HasEmployeePrice THEN BEGIN
+          BuildPriceObject({ref}employeePriceObject, {ref}employeeCurrenciesArray, {ref}employeeCurrencyObject, employeePrice, recPrice."Price Includes VAT", taxClassId);
+          pricesJSONObject.Add(prop.JProperty('_pim_price_employee', employeePriceObject));
+        END;
+
+        // define member price
+        HasMemberPrice := FALSE;
+
+        WITH MemberPrice DO BEGIN
+          RESET();
+          SETRANGE("Item No.", Item."No.");
+          SETFILTER("Starting Date and Time", '%1|<=%2', 0DT, CREATEDATETIME(WORKDATE(), TIME()));
+          SETFILTER("Ending Date and Time", '%1|>=%2', 0DT, CREATEDATETIME(WORKDATE(), TIME()));
+          SETRANGE("Sales Type", "Sales Type"::"Customer Price Group"); // !!!
+          SETRANGE("Sales Code", 'MIT'); // !!!
+          IF FINDFIRST() THEN
+            HasMemberPrice := TRUE;
+        END;
+
+        IF HasMemberPrice THEN BEGIN
+          BuildPriceObject({ref}memberPriceObject, {ref}memberCurrenciesArray, {ref}memberCurrencyObject, MemberPrice."Unit Price", MemberPrice."Price Includes VAT", taxClassId);
+          pricesJSONObject.Add(prop.JProperty('_pim_price_member', memberPriceObject));
+        END;
+
+      END;
+
+        //Das letzte JSON mit dem aktuellen vergleichen
+        S04ActindoItemSyncState.CALCFIELDS("Item Prices");
+        S04ActindoItemSyncState."Item Prices".CREATEINSTREAM(InStream);
+        InStream.READ(OldJSON);
+        NewJSON := pricesJSONObject.ToString();
+        //Update ist notwendig, JSON stimmt nicht Åberein
+        IF OldJSON <> NewJSON THEN BEGIN
+          S04ActindoItemSyncState."Item Prices".CREATEOUTSTREAM(OutStream);
+          OutStream.WRITE(NewJSON);
+          UpdateNecessary := TRUE;
+        END;
+    END;
+
+    LOCAL PROCEDURE CheckActindoSetup@5091735();
+    BEGIN
+      // check of all relevant setup fields
+      ActindoSetup.GET();
+      ActindoSetup.TESTFIELD("Flock Attributeset ID");
+      ActindoSetup.TESTFIELD("Merchandise Attributeset ID");
+      ActindoSetup.TESTFIELD("Flock Variantset ID");
+      ActindoSetup.TESTFIELD("Merchandise Variantset ID");
+      ActindoSetup.TESTFIELD("Voucher Variantset ID");
+      ActindoSetup.TESTFIELD("Free Taxclass ID");
+      ActindoSetup.TESTFIELD("Reduced Taxclass ID");
+      ActindoSetup.TESTFIELD("Default Taxclass ID");
+      ActindoSetup.TESTFIELD("Standard Customer Account");
+      ActindoSetup.TESTFIELD("Voucher Product Posting Group");
+      ActindoSetup.TESTFIELD("String Value Employee Price");
+    END;
+
+    LOCAL PROCEDURE BuildPriceObject@5091742(VAR priceObj@5091706 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";VAR currenciesArray@5091705 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JArray";VAR currencyObj@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";price@5091700 : Decimal;isGross@5091701 : Boolean;taxClassId@5091702 : Integer);
+    VAR
+      prop@5091707 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      JToken@5091708 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JToken";
+      basePriceObj@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+    BEGIN
+      priceObj        := priceObj.JObject();
+      currenciesArray := currenciesArray.JArray();
+      currencyObj     := currencyObj.JObject();
+      basePriceObj    := basePriceObj.JObject();
+
+      currencyObj.Add(prop.JProperty('currency', 'EUR'));
+      basePriceObj.Add(prop.JProperty('isGross', isGross));
+      basePriceObj.Add(prop.JProperty('price', price));
+      currencyObj.Add(prop.JProperty('basePrice', basePriceObj));
+
+      JToken := currencyObj;
+      currenciesArray.Add(JToken);
+
+      priceObj.Add(prop.JProperty('currencies', currenciesArray));
+      priceObj.Add(prop.JProperty('taxClassId', taxClassId));
+    END;
+
+    LOCAL PROCEDURE CheckCustomer@5091715(VAR S04ActindoItemSyncState@5091707 : Record 81123;VAR debObject@5091704 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";VAR UpdateNecessary@5091700 : Boolean);
+    VAR
+      addressObj@5091703 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      customerObj@5091702 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JObject";
+      prop@5091701 : DotNet "'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'.Newtonsoft.Json.Linq.JProperty";
+      recDebitor@5091705 : Record 18;
+      recDebExt@5091706 : Record 60018;
+      CustomerPriceGroup@5091708 : Record 6;
+      customerId@5091709 : Text;
+      primaryAddressId@5091710 : Integer;
+      debNo@5091711 : Code[20];
+      InStream@5091715 : InStream;
+      OutStream@5091714 : OutStream;
+      OldJSON@5091713 : Text;
+      NewJSON@5091712 : Text;
+    BEGIN
+      debNo := S04ActindoItemSyncState."Item No.";
+      recDebitor.GET(debNo);
+      // no synch. of companies
+      IF recDebitor.Type = recDebitor.Type::Company THEN
+        EXIT;
+
+      debObject   := debObject.JObject();
+      customerObj := customerObj.JObject();
+      addressObj  := addressObj.JObject();
+
+      // ID is just needed for save
+      IF recDebExt.GET(debNo) THEN BEGIN
+        IF recDebExt."Actindo Customer ID" <> '' THEN BEGIN
+          customerId := recDebExt."Actindo Customer ID";
+          customerObj.Add(prop.JProperty('id', customerId));
+        END;
+      END;
+
+      // customer
+      customerObj.Add(prop.JProperty('shortName', recDebitor."First Name" + ' ' + recDebitor.Surname));
+
+      // check for relevant customer price group and determine Actindo customer type (employee/member)
+      IF recDebitor."Telex No." <> '' THEN BEGIN
+        customerObj.Add(prop.JProperty('_customer_customertyp', ActindoSetup."String Value Employee Price"));
+      END ELSE BEGIN
+        IF recDebitor."Customer Price Group" <> '' THEN BEGIN
+          CustomerPriceGroup.GET(recDebitor."Customer Price Group");
+          IF CustomerPriceGroup."Actindo POS Synch." THEN BEGIN
+            CustomerPriceGroup.TESTFIELD("Actindo POS String Value");
+            customerObj.Add(prop.JProperty('_customer_customertyp', CustomerPriceGroup."Actindo POS String Value"));
+          END;
+        END;
+      END;
+
+      customerObj.Add(prop.JProperty('_customer_debitorennumber', debNo));
+
+      // primaryAddress
+      addressObj.Add(prop.JProperty('salutation', recDebitor."Salutation Code"));
+      addressObj.Add(prop.JProperty('company', recDebitor."Company Name"));
+      addressObj.Add(prop.JProperty('name', recDebitor.Surname));
+      addressObj.Add(prop.JProperty('firstName', recDebitor."First Name"));
+      addressObj.Add(prop.JProperty('address', recDebitor.Address));
+      addressObj.Add(prop.JProperty('city', recDebitor.City));
+      addressObj.Add(prop.JProperty('zip', recDebitor."Post Code"));
+      addressObj.Add(prop.JProperty('email', recDebitor."E-Mail"));
+      addressObj.Add(prop.JProperty('phone', recDebitor."Phone No."));
+      addressObj.Add(prop.JProperty('currency', 'EUR'));
+
+      // add to payload
+      debObject.Add(prop.JProperty('customer', customerObj));
+      debObject.Add(prop.JProperty('primaryAddress', addressObj));
+
+      //Das letzte JSON mit dem aktuellen vergleichen
+      S04ActindoItemSyncState.CALCFIELDS(Customer);
+      S04ActindoItemSyncState.Customer.CREATEINSTREAM(InStream);
+      InStream.READ(OldJSON);
+      NewJSON := debObject.ToString();
+      //Update ist notwendig, JSON stimmt nicht Åberein
+      IF OldJSON <> NewJSON THEN BEGIN
+        S04ActindoItemSyncState.Customer.CREATEOUTSTREAM(OutStream);
+        OutStream.WRITE(NewJSON);
+        UpdateNecessary := TRUE;
+      END;
+    END;
+
+    BEGIN
+    {
+      -----------------------------------------------------------------------------------------
+      # # # # FC SCHALKE 04 INDIVIDUELL # # # #
+      -----------------------------------------------------------------------------------------
+      Date        Version   ReferenceID   Developer  Comment
+      -----------------------------------------------------------------------------------------
+      2025-12-15  S04.00    Dev-70        s04-jra    created object
+    }
+    END.
+  }
+}
+

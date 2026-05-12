@@ -1,0 +1,63 @@
+OBJECT Table 80092 S04 Actindo Setup
+{
+  OBJECT-PROPERTIES
+  {
+    Date=10.04.26;
+    Time=18:12:27;
+    Modified=Yes;
+    Version List=S04.00,ACTINDO;
+  }
+  PROPERTIES
+  {
+    CaptionML=[DEU=S04 Actindo Einrichtung;
+               ENU=S04 Actindo Setup];
+  }
+  FIELDS
+  {
+    { 1   ;   ;PK                  ;Code10        ;CaptionML=ENU=PK }
+    { 2   ;   ;Default Taxclass ID ;Integer       ;CaptionML=ENU=Standard Steuerklasse ID }
+    { 3   ;   ;Reduced Taxclass ID ;Integer       ;CaptionML=ENU=ErmÑ·igt Steuerklasse ID }
+    { 4   ;   ;Free Taxclass ID    ;Integer       ;CaptionML=ENU=Frei Steuerklasse ID }
+    { 5   ;   ;Voucher Variantset ID;Integer      ;CaptionML=ENU=Gutschein Variantset ID }
+    { 6   ;   ;Merchandise Variantset ID;Integer   }
+    { 7   ;   ;Flock Variantset ID ;Integer        }
+    { 8   ;   ;Merchandise Attributeset ID;Integer }
+    { 9   ;   ;Flock Attributeset ID;Integer       }
+    { 10  ;   ;Last Transaction Date;DateTime     ;CaptionML=ENU=Letztes Transaktions Datum }
+    { 11  ;   ;Standard Customer Account;Code20   ;TableRelation=Customer.No.;
+                                                   CaptionML=[DEU=Standarddebitor Verbuchung;
+                                                              ENU=Standard Customer Account for Posting] }
+    { 12  ;   ;Voucher Product Posting Group;Code20;
+                                                   TableRelation="Gen. Product Posting Group";
+                                                   CaptionML=[DEU=Gutschein Produktbuchungsgruppe;
+                                                              ENU=Voucher Product Posting Group] }
+    { 13  ;   ;Customer Synch. Active;Boolean     ;CaptionML=[DEU=Debitorensynchronisation aktiv;
+                                                              ENU=Customer Synch. Active] }
+    { 14  ;   ;Product Synch. Active;Boolean      ;CaptionML=[DEU=Artikelsynchronisation aktiv;
+                                                              ENU=Product Synch. Active] }
+    { 15  ;   ;POS Transaction Synch. Active;Boolean;
+                                                   CaptionML=[DEU=POS Transaktionen synchronisieren;
+                                                              ENU=POS Transaction Synch. Active] }
+    { 16  ;   ;String Value Employee Price;Text50 ;CaptionML=DEU=Attributwert Mitarbeiterpreise }
+    { 17  ;   ;Payment Method Code BAR;Code10     ;TableRelation="Payment Method";
+                                                   CaptionML=DEU=Zahlungsmethode Barzahlung }
+    { 18  ;   ;Payment Method Code EC;Code10      ;TableRelation="Payment Method";
+                                                   CaptionML=DEU=Zahlungsmethode Debit-Kartenzahlung }
+    { 19  ;   ;Salesperson Transactions;Code20    ;TableRelation=Salesperson/Purchaser;
+                                                   CaptionML=DEU=VerkÑufercode fÅr Transaktionen }
+  }
+  KEYS
+  {
+    {    ;PK                                      ;Clustered=Yes }
+  }
+  FIELDGROUPS
+  {
+  }
+  CODE
+  {
+
+    BEGIN
+    END.
+  }
+}
+

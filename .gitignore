@@ -28,3 +28,6 @@ CLAUDE.md
 Thumbs.db
 *.DS_Store
 *.swp
+
+# Local project documentation
+Docs/

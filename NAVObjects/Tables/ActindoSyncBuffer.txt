@@ -1,0 +1,104 @@
+OBJECT Table 80091 S04 Actindo Synch. Buffer
+{
+  OBJECT-PROPERTIES
+  {
+    Date=10.04.26;
+    Time=18:12:22;
+    Modified=Yes;
+    Version List=S04.00,ACTINDO;
+  }
+  PROPERTIES
+  {
+    LookupPageID=Page80039;
+    DrillDownPageID=Page80039;
+  }
+  FIELDS
+  {
+    { 1   ;   ;No.                 ;BigInteger    ;AutoIncrement=Yes;
+                                                   CaptionML=[DEU=Lfd. Nummer;
+                                                              ENU=Current No.] }
+    { 2   ;   ;Request Type        ;Text50        ;CaptionML=[DEU=Anfragentyp;
+                                                              ENU=Request Type] }
+    { 3   ;   ;Status              ;Option        ;CaptionML=[DEU=Status;
+                                                              ENU=Status];
+                                                   OptionCaptionML=[DEU=Offen,In Bearbeitung,Verarbeitet,Fehler;
+                                                                    ENU=Open,In Progess,Processed,Error];
+                                                   OptionString=Open,In Progress,Processed,Error }
+    { 4   ;   ;Request Timestamp   ;DateTime      ;CaptionML=[DEU=Anfragenzeitpunkt;
+                                                              ENU=Request Timestamp] }
+    { 5   ;   ;Processing Timestamp;DateTime      ;OnValidate=BEGIN
+                                                                "Processing Duration" := "Processing Timestamp" - "Request Timestamp";
+                                                              END;
+
+                                                   CaptionML=[DEU=Verarbeitungszeitpunkt;
+                                                              ENU=Processing Timestamp] }
+    { 6   ;   ;Processing Duration ;Duration      ;CaptionML=[DEU=Verarbeitungsdauer;
+                                                              ENU=Processing Duration] }
+    { 7   ;   ;Request Document    ;BLOB          ;OnLookup=VAR
+                                                              FileManagement@5091700 : Codeunit 419;
+                                                            BEGIN
+                                                              CALCFIELDS("Request Document");
+                                                              "Request Document".EXPORT('c:\temp\JSON_Blob.json');
+                                                              HYPERLINK(FileManagement.DownloadTempFile('c:\temp\JSON_Blob.json'));
+                                                            END;
+
+                                                   CaptionML=[DEU=Request BLOB;
+                                                              ENU=Request BLOB] }
+    { 8   ;   ;Response Document   ;BLOB          ;OnLookup=VAR
+                                                              FileManagement@5091700 : Codeunit 419;
+                                                            BEGIN
+                                                              CALCFIELDS("Response Document");
+                                                              "Response Document".EXPORT('c:\temp\JSON_Blob.json');
+                                                              HYPERLINK(FileManagement.DownloadTempFile('c:\temp\JSON_Blob.json'));
+                                                            END;
+
+                                                   CaptionML=[DEU=Response BLOB;
+                                                              ENU=Response BLOB] }
+    { 9   ;   ;Error Message       ;Text250       ;CaptionML=[DEU=Fehlermeldung;
+                                                              ENU=Error Message] }
+    { 10  ;   ;Detailed Error Message;BLOB        ;OnLookup=VAR
+                                                              FileManagement@5091700 : Codeunit 419;
+                                                            BEGIN
+                                                              CALCFIELDS("Detailed Error Message");
+                                                              "Detailed Error Message".EXPORT('c:\temp\JSON_Blob.json');
+                                                              HYPERLINK(FileManagement.DownloadTempFile('c:\temp\JSON_Blob.json'));
+                                                            END;
+
+                                                   CaptionML=[DEU=Detaillierte Fehlermeldung;
+                                                              ENU=Detailed Error Message] }
+    { 11  ;   ;User ID             ;Code50        ;TableRelation=User;
+                                                   CaptionML=[DEU=Benutzer ID;
+                                                              ENU=User ID] }
+    { 12  ;   ;Reference No.       ;Code50        ;CaptionML=[DEU=Referenznummer;
+                                                              ENU=Reference No.] }
+    { 13  ;   ;Direction           ;Option        ;InitValue=Inbound;
+                                                   CaptionML=[DEU=Richtung;
+                                                              ENU=Direction];
+                                                   OptionCaptionML=[DEU=Eingehend,Ausgehend;
+                                                                    ENU=Inbound,Outbound];
+                                                   OptionString=Inbound,Outbound }
+    { 14  ;   ;Endpoint            ;Text30         }
+  }
+  KEYS
+  {
+    {    ;No.                                     ;Clustered=Yes }
+  }
+  FIELDGROUPS
+  {
+  }
+  CODE
+  {
+
+    BEGIN
+    {
+      --------------------------------------------------------------------------------------------------------
+                              # # # #    FC SCHALKE 04 INDIVIDUELL    # # # #
+      --------------------------------------------------------------------------------------------------------
+      Date        Version     Reference-ID       Developer     Comment
+      --------------------------------------------------------------------------------------------------------
+      2025-08-19  S04.00      DEV-68             s04-jra       Object creation
+    }
+    END.
+  }
+}
+

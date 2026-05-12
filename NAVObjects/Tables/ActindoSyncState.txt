@@ -1,0 +1,52 @@
+OBJECT Table 81123 S04 Actindo Sync State
+{
+  OBJECT-PROPERTIES
+  {
+    Date=10.04.26;
+    Time=18:12:32;
+    Modified=Yes;
+    Version List=S04.01,ACTINDO;
+  }
+  PROPERTIES
+  {
+  }
+  FIELDS
+  {
+    { 1   ;   ;Item No.            ;Code20         }
+    { 2   ;   ;Variant Code        ;Code20         }
+    { 3   ;   ;Cross-Reference No. ;Code30        ;CaptionML=[DEU=Referenznr.;
+                                                              ENU=Cross-Reference No.];
+                                                   NotBlank=Yes;
+                                                   Description=from 20 to 30 }
+    { 4   ;   ;Item Inventory      ;BLOB           }
+    { 5   ;   ;Transl. WebKeywords DE;Text250      }
+    { 6   ;   ;Transl. WebKeywords EN;Text250      }
+    { 7   ;   ;Transl. Description DE;Text50       }
+    { 8   ;   ;Transl. Description EN;Text50       }
+    { 9   ;   ;ItemDescription     ;Text50         }
+    { 10  ;   ;ItemDescription2    ;Text50         }
+    { 11  ;   ;Transl. WebMetaTitle DE;Text250     }
+    { 12  ;   ;Transl. WebMetaTitle EN;Text250     }
+    { 13  ;   ;Transl. WebMetaDesc DE;Text250      }
+    { 14  ;   ;Transl. WebMetaDesc EN;Text250      }
+    { 15  ;   ;Last Update         ;DateTime       }
+    { 16  ;   ;Update Necessary    ;Boolean        }
+    { 17  ;   ;Item Prices         ;BLOB           }
+    { 19  ;   ;Entry Type          ;Option        ;OptionString=Item,Customer }
+    { 20  ;   ;Customer            ;BLOB           }
+  }
+  KEYS
+  {
+    {    ;Item No.,Variant Code,Entry Type        ;Clustered=Yes }
+  }
+  FIELDGROUPS
+  {
+  }
+  CODE
+  {
+
+    BEGIN
+    END.
+  }
+}
+
