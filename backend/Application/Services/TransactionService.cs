@@ -24,23 +24,10 @@ public sealed class TransactionService
         ArgumentNullException.ThrowIfNull(request);
 
         var filters = CreateDateFilters(request);
-        filters.Add(new
-        {
-            property = "type",
-            @operator = "=",
-            value = "RB"
-        });
-        filters.Add(new
-        {
-            property = "type",
-            @operator = "=",
-            value = "GU"
-        });
-
         var payload = new
         {
             filter = filters,
-            serializeOptionals = new[] { "legacyProperties", "positions._schalke_position_flock_name", "positions._schalke_position_flock_number" },
+            serializeOptionals = new[] { "legacyProperties", "positions._schalke_position_flock_name", "positions._schalke_position_flock_number", "tstamp" },
             start = 0,
             limit = 500
         };
@@ -99,8 +86,7 @@ public sealed class TransactionService
     {
         return new List<object>
         {
-            CreatedFilter(">=", FormatDateTime(from)),
-            CreatedFilter("<=", FormatDateTime(to))
+            CreatedBetweenFilter(FormatDateTime(from), FormatDateTime(to))
         };
     }
 
@@ -121,5 +107,16 @@ public sealed class TransactionService
         property = "created",
         @operator = op,
         value
+    };
+
+    private static object CreatedBetweenFilter(string from, string to) => new
+    {
+        property = "created",
+        @operator = "bt",
+        value = new
+        {
+            from,
+            to
+        }
     };
 }
